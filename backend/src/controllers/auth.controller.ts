@@ -1,87 +1,111 @@
 import { Request, Response } from 'express';
-import { AuthService } from '../services/auth.service';
-import { asyncHandler, AppError } from '../middleware/errorHandler';
-import { AuthRequest } from '../middleware/auth';
-import { z } from 'zod';
+import prisma from '../config/database';
+import redis from '../config/redis';
+import smsService from '../services/sms.service';
+import { generateToken } from '../services/jwt.service';
+import { generateOTP, generateReferralCode } from '../utils/otp';
+import { isValidIndianPhone, normalizePhone } from '../utils/phone';
+import { sendOTPSchema, verifyOTPSchema } from '../validators/auth.validator';
 
-const sendOTPSchema = z.object({
-  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number'),
-});
+export async function sendOTP(req: Request, res: Response) {
+  try {
+    const result = sendOTPSchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid phone number format'
+      });
+    }
 
-const verifyOTPSchema = z.object({
-  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number'),
-  code: z.string().length(6, 'OTP must be 6 digits'),
-});
+    const { phone: rawPhone } = result.data;
+    const phone = normalizePhone(rawPhone);
 
-export class AuthController {
-  private authService: AuthService;
+    if (!isValidIndianPhone(phone)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid Indian phone number'
+      });
+    }
 
-  constructor() {
-    this.authService = new AuthService();
+    const otp = generateOTP();
+    await smsService.sendOTP(phone, otp);
+
+    return res.json({
+      success: true,
+      message: `OTP sent to ${phone}`,
+      expiresIn: 300
+    });
+
+  } catch (error) {
+    console.error('Send OTP error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to send OTP'
+    });
   }
+}
 
-  sendOTP = asyncHandler(async (req: Request, res: Response) => {
-    const { phone } = sendOTPSchema.parse(req.body);
-
-    await this.authService.sendOTP(phone);
-
-    res.json({
-      success: true,
-      message: 'OTP sent successfully',
-      data: {
-        phone,
-        expiresIn: 300, // 5 minutes
-      },
-    });
-  });
-
-  verifyOTP = asyncHandler(async (req: Request, res: Response) => {
-    const { phone, code } = verifyOTPSchema.parse(req.body);
-
-    const result = await this.authService.verifyOTP(phone, code);
-
-    res.json({
-      success: true,
-      message: 'OTP verified successfully',
-      data: result,
-    });
-  });
-
-  refreshToken = asyncHandler(async (req: Request, res: Response) => {
-    const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      throw new AppError(400, 'Refresh token is required');
+export async function verifyOTP(req: Request, res: Response) {
+  try {
+    const result = verifyOTPSchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid OTP format'
+      });
     }
 
-    const result = await this.authService.refreshToken(refreshToken);
+    const { phone: rawPhone, otp } = result.data;
+    const phone = normalizePhone(rawPhone);
 
-    res.json({
-      success: true,
-      message: 'Token refreshed successfully',
-      data: result,
-    });
-  });
-
-  logout = asyncHandler(async (req: AuthRequest, res: Response) => {
-    // In a real app, you'd invalidate the token here
-    // For now, we'll just return success
-    res.json({
-      success: true,
-      message: 'Logged out successfully',
-    });
-  });
-
-  getCurrentUser = asyncHandler(async (req: AuthRequest, res: Response) => {
-    if (!req.user) {
-      throw new AppError(401, 'Not authenticated');
+    const storedOTP = await redis.get(`otp:${phone}`);
+    
+    if (!storedOTP || storedOTP !== otp) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid or expired OTP'
+      });
     }
 
-    const user = await this.authService.getUserById(req.user.id);
+    await redis.del(`otp:${phone}`);
 
-    res.json({
-      success: true,
-      data: user,
+    let user = await prisma.user.findUnique({ where: { phone } });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          phone,
+          referralCode: generateReferralCode()
+        }
+      });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() }
     });
-  });
+
+    const token = generateToken({
+      userId: user.id,
+      phone: user.phone
+    });
+
+    return res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        phone: user.phone,
+        name: user.name,
+        referralCode: user.referralCode
+      }
+    });
+
+  } catch (error) {
+    console.error('Verify OTP error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to verify OTP'
+    });
+  }
 }

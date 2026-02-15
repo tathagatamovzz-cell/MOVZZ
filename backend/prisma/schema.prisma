@@ -1,6 +1,3 @@
-// Prisma Schema for MOVZZ
-// Database: PostgreSQL
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,313 +7,217 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================
-// USER MANAGEMENT
-// ============================================
-
 model User {
-  id            String    @id @default(uuid())
-  phone         String    @unique
-  email         String?   @unique
-  name          String?
-  profileImage  String?
-  
-  // Authentication
-  passwordHash  String?
-  isVerified    Boolean   @default(false)
-  
-  // Preferences
-  preferredLanguage String @default("en")
-  preferredPayment  String @default("cash")
-  
-  // Metadata
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastLoginAt   DateTime?
-  
-  // Relations
-  bookings      Booking[]
-  savedLocations SavedLocation[]
-  paymentMethods PaymentMethod[]
-  otpCodes      OTPCode[]
-  
+  id              String      @id @default(uuid())
+  phone           String      @unique
+  name            String?
+  email           String?
+  referralCode    String      @unique @default(cuid())
+  referredBy      String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  lastLoginAt     DateTime?
+  bookings        Booking[]
+  credits         UserCredit[]
+
   @@index([phone])
-  @@index([email])
+  @@index([referralCode])
 }
 
-model OTPCode {
+model Booking {
+  id              String        @id @default(uuid())
+  userId          String
+  userPhone       String
+  pickup          String
+  pickupLat       Float?
+  pickupLng       Float?
+  dropoff         String
+  dropoffLat      Float?
+  dropoffLng      Float?
+  tripType        TripType      @default(HIGH_RELIABILITY)
+  providerId      String?
+  providerType    ProviderType?
+  state           BookingState
+  previousState   BookingState?
+  fareEstimate    Int
+  fareActual      Int?
+  commissionRate  Float         @default(0.10)
+  commissionAmount Int?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  confirmedAt     DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  failedAt        DateTime?
+  timeoutAt       DateTime?
+  recoveryAttempts Int          @default(0)
+  manualIntervention Boolean    @default(false)
+  metadata        Json?
+  user            User          @relation(fields: [userId], references: [id])
+  provider        Provider?     @relation(fields: [providerId], references: [id])
+  attempts        BookingAttempt[]
+  logs            BookingLog[]
+
+  @@index([userId])
+  @@index([userPhone])
+  @@index([state])
+  @@index([createdAt])
+  @@index([providerId])
+  @@index([timeoutAt])
+}
+
+enum BookingState {
+  SEARCHING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+  MANUAL_ESCALATION
+}
+
+enum TripType {
+  HIGH_RELIABILITY
+  STANDARD
+}
+
+enum ProviderType {
+  INDIVIDUAL_DRIVER
+  FLEET_OPERATOR
+}
+
+model Provider {
+  id              String        @id @default(uuid())
+  name            String
+  phone           String        @unique
+  type            ProviderType
+  vehicleModel    String?
+  vehiclePlate    String?
+  apiEndpoint     String?
+  commissionRate  Float         @default(0.10)
+  paymentTerms    String        @default("T+2")
+  active          Boolean       @default(true)
+  pausedUntil     DateTime?
+  pauseReason     String?
+  reliability     Float         @default(0.85)
+  rating          Float         @default(4.5)
+  totalRides      Int           @default(0)
+  successfulRides Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  lastActiveAt    DateTime?
+  bookings        Booking[]
+  attempts        BookingAttempt[]
+  metrics         ProviderMetric[]
+  payouts         Payout[]
+
+  @@index([type])
+  @@index([active])
+  @@index([reliability])
+  @@index([phone])
+}
+
+model ProviderMetric {
+  id                  String    @id @default(uuid())
+  providerId          String
+  date                DateTime  @db.Date
+  totalBookings       Int       @default(0)
+  successfulBookings  Int       @default(0)
+  cancelledBookings   Int       @default(0)
+  rejectedBookings    Int       @default(0)
+  failedBookings      Int       @default(0)
+  avgResponseTime     Int?
+  avgAcceptanceTime   Int?
+  onTimePickups       Int       @default(0)
+  latePickups         Int       @default(0)
+  reliabilityScore    Float     @default(0.0)
+  onTimeRate          Float     @default(0.0)
+  totalRevenue        Int       @default(0)
+  totalCommission     Int       @default(0)
+  provider            Provider  @relation(fields: [providerId], references: [id])
+
+  @@unique([providerId, date])
+  @@index([date])
+  @@index([reliabilityScore])
+}
+
+model BookingAttempt {
+  id              String    @id @default(uuid())
+  bookingId       String
+  providerId      String
+  attemptNumber   Int
+  success         Boolean
+  responseTime    Int?
+  errorMessage    String?
+  score           Float?
+  reliability     Float?
+  eta             Int?
+  fare            Int?
+  createdAt       DateTime  @default(now())
+  metadata        Json?
+  booking         Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  provider        Provider  @relation(fields: [providerId], references: [id])
+
+  @@index([bookingId])
+  @@index([providerId])
+  @@index([success])
+}
+
+model BookingLog {
   id          String    @id @default(uuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  code        String
-  phone       String
-  expiresAt   DateTime
-  verified    Boolean   @default(false)
-  attempts    Int       @default(0)
-  
+  bookingId   String
+  event       String
+  message     String
+  metadata    Json?
   createdAt   DateTime  @default(now())
-  
-  @@index([phone, code])
+  booking     Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([event])
+  @@index([createdAt])
+}
+
+model UserCredit {
+  id              String    @id @default(uuid())
+  userId          String
+  userPhone       String
+  amount          Int
+  reason          String
+  issued          DateTime  @default(now())
+  used            Boolean   @default(false)
+  usedAt          DateTime?
+  usedInBookingId String?
+  expiresAt       DateTime
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([userPhone])
+  @@index([used])
   @@index([expiresAt])
 }
 
-model SavedLocation {
-  id          String   @id @default(uuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  label       String   // "Home", "Work", "Gym"
-  address     String
-  latitude    Float
-  longitude   Float
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@index([userId])
-}
-
-// ============================================
-// BOOKING SYSTEM
-// ============================================
-
-model Booking {
-  id              String   @id @default(uuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id])
-  
-  // Journey Details
-  pickupAddress   String
-  pickupLat       Float
-  pickupLng       Float
-  dropAddress     String
-  dropLat         Float
-  dropLng         Float
-  distance        Float    // in kilometers
-  
-  // Provider Details
-  provider        String   // "uber", "ola", "rapido", "metro"
-  vehicleType     String   // "cab", "bike", "auto", "metro"
-  rideType        String?  // "UberGo", "Ola Mini", etc.
-  
-  // Pricing
-  estimatedPrice  Float
-  finalPrice      Float?
-  currency        String   @default("INR")
-  
-  // Status
-  status          BookingStatus @default(PENDING)
-  
-  // Provider Response
-  providerBookingId String?
-  providerResponse  Json?
-  
-  // Driver Details (when assigned)
-  driverName      String?
-  driverPhone     String?
-  driverRating    Float?
-  vehicleNumber   String?
-  vehicleModel    String?
-  
-  // Timing
-  estimatedETA    Int?     // in minutes
-  pickupTime      DateTime?
-  dropTime        DateTime?
-  
-  // Payment
-  paymentMethod   String   @default("cash")
-  paymentStatus   PaymentStatus @default(PENDING)
+model Payout {
+  id              String      @id @default(uuid())
+  providerId      String
+  totalRides      Int
+  totalRevenue    Int
+  commissionAmount Int
+  netPayout       Int
+  status          PayoutStatus @default(PENDING)
+  createdAt       DateTime    @default(now())
+  paidAt          DateTime?
+  paymentMethod   String?
   transactionId   String?
-  
-  // Metadata
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  cancelledAt     DateTime?
-  cancellationReason String?
-  
-  // Relations
-  legs            BookingLeg[]
-  
-  @@index([userId])
+  provider        Provider    @relation(fields: [providerId], references: [id])
+
+  @@index([providerId])
   @@index([status])
   @@index([createdAt])
-  @@index([provider])
 }
 
-enum BookingStatus {
-  PENDING
-  SEARCHING
-  CONFIRMED
-  DRIVER_ASSIGNED
-  DRIVER_ARRIVED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-  FAILED
-}
-
-enum PaymentStatus {
+enum PayoutStatus {
   PENDING
   PROCESSING
   COMPLETED
   FAILED
-  REFUNDED
-}
-
-// For multi-modal journeys (e.g., Metro + Cab)
-model BookingLeg {
-  id              String   @id @default(uuid())
-  bookingId       String
-  booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  
-  sequence        Int      // 1, 2, 3 for multi-leg journeys
-  provider        String
-  vehicleType     String
-  
-  startAddress    String
-  startLat        Float
-  startLng        Float
-  endAddress      String
-  endLat          Float
-  endLng          Float
-  
-  distance        Float
-  estimatedPrice  Float
-  estimatedTime   Int      // in minutes
-  
-  status          String   @default("pending")
-  
-  createdAt       DateTime @default(now())
-  
-  @@index([bookingId])
-}
-
-// ============================================
-// PROVIDER INTEGRATION
-// ============================================
-
-model ProviderCache {
-  id              String   @id @default(uuid())
-  
-  // Cache Key
-  provider        String
-  routeHash       String   // Hash of pickup + drop coordinates
-  vehicleType     String
-  
-  // Cached Data
-  estimatedPrice  Float
-  estimatedETA    Int
-  availability    Boolean
-  surgeMultiplier Float?
-  
-  // Response
-  rawResponse     Json
-  
-  // Metadata
-  createdAt       DateTime @default(now())
-  expiresAt       DateTime
-  
-  @@unique([provider, routeHash, vehicleType])
-  @@index([expiresAt])
-}
-
-model ProviderLog {
-  id              String   @id @default(uuid())
-  
-  provider        String
-  endpoint        String
-  method          String
-  
-  requestBody     Json?
-  responseBody    Json?
-  statusCode      Int?
-  
-  success         Boolean
-  errorMessage    String?
-  
-  latency         Int?     // in milliseconds
-  
-  createdAt       DateTime @default(now())
-  
-  @@index([provider])
-  @@index([createdAt])
-  @@index([success])
-}
-
-// ============================================
-// PAYMENT SYSTEM
-// ============================================
-
-model PaymentMethod {
-  id              String   @id @default(uuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  type            String   // "card", "upi", "wallet"
-  provider        String?  // "razorpay", "paytm", "gpay"
-  
-  // Card Details (encrypted)
-  last4           String?
-  cardBrand       String?
-  expiryMonth     Int?
-  expiryYear      Int?
-  
-  // UPI
-  upiId           String?
-  
-  // Wallet
-  walletId        String?
-  
-  isDefault       Boolean  @default(false)
-  isActive        Boolean  @default(true)
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  @@index([userId])
-}
-
-// ============================================
-// ANALYTICS & MONITORING
-// ============================================
-
-model RouteAnalytics {
-  id              String   @id @default(uuid())
-  
-  // Route
-  pickupArea      String
-  dropArea        String
-  distance        Float
-  
-  // Provider Performance
-  provider        String
-  vehicleType     String
-  avgPrice        Float
-  avgETA          Int
-  successRate     Float
-  
-  // Aggregation
-  totalBookings   Int
-  date            DateTime @db.Date
-  
-  createdAt       DateTime @default(now())
-  
-  @@unique([pickupArea, dropArea, provider, vehicleType, date])
-  @@index([date])
-}
-
-model SystemMetrics {
-  id              String   @id @default(uuid())
-  
-  metricName      String
-  metricValue     Float
-  metricUnit      String?
-  
-  tags            Json?    // { "provider": "uber", "region": "chennai" }
-  
-  timestamp       DateTime @default(now())
-  
-  @@index([metricName])
-  @@index([timestamp])
 }
