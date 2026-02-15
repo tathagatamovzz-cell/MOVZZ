@@ -1,3 +1,6 @@
+// Prisma Schema for MOVZZ Backend
+// Database: PostgreSQL
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,217 +10,310 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================
+// USER MANAGEMENT
+// ============================================
+
 model User {
-  id              String      @id @default(uuid())
-  phone           String      @unique
-  name            String?
-  email           String?
-  referralCode    String      @unique @default(cuid())
-  referredBy      String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  lastLoginAt     DateTime?
-  bookings        Booking[]
-  credits         UserCredit[]
+  id                String            @id @default(uuid())
+  phone             String            @unique
+  email             String?           @unique
+  name              String?
+  profileImage      String?
+  isVerified        Boolean           @default(false)
+  preferredLanguage String            @default("en")
+  preferredPayment  String            @default("cash")
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  lastLoginAt       DateTime?
+  
+  // Relations
+  otpCodes          OTPCode[]
+  bookings          Booking[]
+  savedLocations    SavedLocation[]
+  paymentMethods    PaymentMethod[]
 
   @@index([phone])
-  @@index([referralCode])
+  @@index([email])
+  @@map("users")
 }
+
+model OTPCode {
+  id        String   @id @default(uuid())
+  userId    String
+  phone     String
+  code      String
+  verified  Boolean  @default(false)
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([phone, code])
+  @@index([expiresAt])
+  @@map("otp_codes")
+}
+
+model SavedLocation {
+  id        String   @id @default(uuid())
+  userId    String
+  label     String   // "Home", "Work", "Gym", etc.
+  address   String
+  latitude  Float
+  longitude Float
+  createdAt DateTime @default(now())
+  
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("saved_locations")
+}
+
+// ============================================
+// BOOKING MANAGEMENT
+// ============================================
 
 model Booking {
-  id              String        @id @default(uuid())
-  userId          String
-  userPhone       String
-  pickup          String
-  pickupLat       Float?
-  pickupLng       Float?
-  dropoff         String
-  dropoffLat      Float?
-  dropoffLng      Float?
-  tripType        TripType      @default(HIGH_RELIABILITY)
-  providerId      String?
-  providerType    ProviderType?
-  state           BookingState
-  previousState   BookingState?
-  fareEstimate    Int
-  fareActual      Int?
-  commissionRate  Float         @default(0.10)
-  commissionAmount Int?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  confirmedAt     DateTime?
+  id                  String        @id @default(uuid())
+  userId              String
+  
+  // Location details
+  pickupAddress       String
+  pickupLat           Float
+  pickupLng           Float
+  dropAddress         String
+  dropLat             Float
+  dropLng             Float
+  distance            Float         // in kilometers
+  
+  // Provider details
+  provider            String        // "uber", "ola", "rapido"
+  vehicleType         String        // "cab", "bike", "auto"
+  rideType            String?       // "UberGo", "Ola Mini", etc.
+  
+  // Pricing
+  estimatedPrice      Float
+  finalPrice          Float?
+  currency            String        @default("INR")
+  
+  // Driver details (populated when assigned)
+  driverName          String?
+  driverPhone         String?
+  driverRating        Float?
+  vehicleNumber       String?
+  vehicleModel        String?
+  
+  // Status tracking
+  status              BookingStatus @default(PENDING)
+  paymentMethod       String        @default("cash")
+  paymentStatus       PaymentStatus @default(PENDING)
+  transactionId       String?
+  
+  // Timing
+  estimatedETA        Int?          // in seconds
+  scheduledAt         DateTime?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  cancelledAt         DateTime?
+  cancellationReason  String?
+  
+  // Metadata
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  
+  // Relations
+  user                User          @relation(fields: [userId], references: [id])
+  legs                BookingLeg[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([provider])
+  @@index([createdAt])
+  @@map("bookings")
+}
+
+model BookingLeg {
+  id              String   @id @default(uuid())
+  bookingId       String
+  sequence        Int      // Order of this leg in multi-modal journey
+  
+  // Leg details
+  provider        String
+  vehicleType     String
+  fromAddress     String
+  fromLat         Float
+  fromLng         Float
+  toAddress       String
+  toLat           Float
+  toLng           Float
+  distance        Float
+  
+  // Pricing
+  estimatedPrice  Float
+  finalPrice      Float?
+  
+  // Timing
+  estimatedTime   Int      // in seconds
   startedAt       DateTime?
   completedAt     DateTime?
-  failedAt        DateTime?
-  timeoutAt       DateTime?
-  recoveryAttempts Int          @default(0)
-  manualIntervention Boolean    @default(false)
-  metadata        Json?
-  user            User          @relation(fields: [userId], references: [id])
-  provider        Provider?     @relation(fields: [providerId], references: [id])
-  attempts        BookingAttempt[]
-  logs            BookingLog[]
-
-  @@index([userId])
-  @@index([userPhone])
-  @@index([state])
-  @@index([createdAt])
-  @@index([providerId])
-  @@index([timeoutAt])
-}
-
-enum BookingState {
-  SEARCHING
-  CONFIRMED
-  IN_PROGRESS
-  COMPLETED
-  FAILED
-  CANCELLED
-  MANUAL_ESCALATION
-}
-
-enum TripType {
-  HIGH_RELIABILITY
-  STANDARD
-}
-
-enum ProviderType {
-  INDIVIDUAL_DRIVER
-  FLEET_OPERATOR
-}
-
-model Provider {
-  id              String        @id @default(uuid())
-  name            String
-  phone           String        @unique
-  type            ProviderType
-  vehicleModel    String?
-  vehiclePlate    String?
-  apiEndpoint     String?
-  commissionRate  Float         @default(0.10)
-  paymentTerms    String        @default("T+2")
-  active          Boolean       @default(true)
-  pausedUntil     DateTime?
-  pauseReason     String?
-  reliability     Float         @default(0.85)
-  rating          Float         @default(4.5)
-  totalRides      Int           @default(0)
-  successfulRides Int           @default(0)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  lastActiveAt    DateTime?
-  bookings        Booking[]
-  attempts        BookingAttempt[]
-  metrics         ProviderMetric[]
-  payouts         Payout[]
-
-  @@index([type])
-  @@index([active])
-  @@index([reliability])
-  @@index([phone])
-}
-
-model ProviderMetric {
-  id                  String    @id @default(uuid())
-  providerId          String
-  date                DateTime  @db.Date
-  totalBookings       Int       @default(0)
-  successfulBookings  Int       @default(0)
-  cancelledBookings   Int       @default(0)
-  rejectedBookings    Int       @default(0)
-  failedBookings      Int       @default(0)
-  avgResponseTime     Int?
-  avgAcceptanceTime   Int?
-  onTimePickups       Int       @default(0)
-  latePickups         Int       @default(0)
-  reliabilityScore    Float     @default(0.0)
-  onTimeRate          Float     @default(0.0)
-  totalRevenue        Int       @default(0)
-  totalCommission     Int       @default(0)
-  provider            Provider  @relation(fields: [providerId], references: [id])
-
-  @@unique([providerId, date])
-  @@index([date])
-  @@index([reliabilityScore])
-}
-
-model BookingAttempt {
-  id              String    @id @default(uuid())
-  bookingId       String
-  providerId      String
-  attemptNumber   Int
-  success         Boolean
-  responseTime    Int?
-  errorMessage    String?
-  score           Float?
-  reliability     Float?
-  eta             Int?
-  fare            Int?
-  createdAt       DateTime  @default(now())
-  metadata        Json?
-  booking         Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  provider        Provider  @relation(fields: [providerId], references: [id])
+  
+  createdAt       DateTime @default(now())
+  
+  // Relations
+  booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
-  @@index([providerId])
-  @@index([success])
+  @@map("booking_legs")
 }
 
-model BookingLog {
-  id          String    @id @default(uuid())
-  bookingId   String
-  event       String
-  message     String
-  metadata    Json?
-  createdAt   DateTime  @default(now())
-  booking     Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+// ============================================
+// PROVIDER MANAGEMENT
+// ============================================
 
-  @@index([bookingId])
-  @@index([event])
-  @@index([createdAt])
-}
+model ProviderCache {
+  id                String   @id @default(uuid())
+  provider          String   // "uber", "ola", "rapido"
+  routeHash         String   // Hash of pickup/drop coordinates
+  vehicleType       String
+  
+  // Cached data
+  estimatedPrice    Float
+  estimatedETA      Int      // in seconds
+  availability      Boolean
+  surgeMultiplier   Float    @default(1.0)
+  rawResponse       Json?    // Store full API response
+  
+  // Cache metadata
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
 
-model UserCredit {
-  id              String    @id @default(uuid())
-  userId          String
-  userPhone       String
-  amount          Int
-  reason          String
-  issued          DateTime  @default(now())
-  used            Boolean   @default(false)
-  usedAt          DateTime?
-  usedInBookingId String?
-  expiresAt       DateTime
-  user            User      @relation(fields: [userId], references: [id])
-
-  @@index([userId])
-  @@index([userPhone])
-  @@index([used])
+  @@unique([provider, routeHash, vehicleType])
   @@index([expiresAt])
+  @@map("provider_cache")
 }
 
-model Payout {
-  id              String      @id @default(uuid())
-  providerId      String
-  totalRides      Int
-  totalRevenue    Int
-  commissionAmount Int
-  netPayout       Int
-  status          PayoutStatus @default(PENDING)
-  createdAt       DateTime    @default(now())
-  paidAt          DateTime?
-  paymentMethod   String?
-  transactionId   String?
-  provider        Provider    @relation(fields: [providerId], references: [id])
+model ProviderLog {
+  id            String   @id @default(uuid())
+  provider      String
+  endpoint      String
+  method        String
+  requestData   Json?
+  responseData  Json?
+  statusCode    Int?
+  success       Boolean
+  errorMessage  String?
+  responseTime  Int?     // in milliseconds
+  createdAt     DateTime @default(now())
 
-  @@index([providerId])
-  @@index([status])
+  @@index([provider])
   @@index([createdAt])
+  @@index([success])
+  @@map("provider_logs")
 }
 
-enum PayoutStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
+// ============================================
+// PAYMENT MANAGEMENT
+// ============================================
+
+model PaymentMethod {
+  id            String   @id @default(uuid())
+  userId        String
+  type          String   // "card", "upi", "wallet"
+  provider      String   // "razorpay", "paytm", etc.
+  
+  // Card details (encrypted)
+  last4         String?
+  cardBrand     String?
+  expiryMonth   Int?
+  expiryYear    Int?
+  
+  // UPI details
+  upiId         String?
+  
+  // Wallet details
+  walletId      String?
+  
+  isDefault     Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("payment_methods")
+}
+
+// ============================================
+// ANALYTICS & METRICS
+// ============================================
+
+model RouteAnalytics {
+  id                String   @id @default(uuid())
+  routeHash         String   // Hash of pickup/drop coordinates
+  
+  // Route details
+  pickupLat         Float
+  pickupLng         Float
+  dropLat           Float
+  dropLng           Float
+  distance          Float
+  
+  // Aggregated data
+  totalBookings     Int      @default(0)
+  avgPrice          Float?
+  avgDuration       Int?     // in seconds
+  popularProvider   String?
+  popularVehicle    String?
+  
+  // Time-based analytics
+  peakHours         Json?    // Array of peak hours
+  avgWaitTime       Int?     // in seconds
+  
+  lastUpdated       DateTime @updatedAt
+  createdAt         DateTime @default(now())
+
+  @@unique([routeHash])
+  @@index([totalBookings])
+  @@map("route_analytics")
+}
+
+model SystemMetrics {
+  id                String   @id @default(uuid())
+  metricType        String   // "api_calls", "bookings", "revenue", etc.
+  metricValue       Float
+  metadata          Json?
+  timestamp         DateTime @default(now())
+
+  @@index([metricType])
+  @@index([timestamp])
+  @@map("system_metrics")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum BookingStatus {
+  PENDING           // Booking created, waiting for confirmation
+  SEARCHING         // Looking for driver
+  DRIVER_ASSIGNED   // Driver found and assigned
+  DRIVER_ARRIVED    // Driver reached pickup location
+  IN_PROGRESS       // Trip started
+  COMPLETED         // Trip completed successfully
+  CANCELLED         // Booking cancelled
+  FAILED            // Booking failed
+  EXPIRED           // Booking expired (no driver found)
+}
+
+enum PaymentStatus {
+  PENDING           // Payment not initiated
+  PROCESSING        // Payment in progress
+  COMPLETED         // Payment successful
+  FAILED            // Payment failed
+  REFUNDED          // Payment refunded
 }
