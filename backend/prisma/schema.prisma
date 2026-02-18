@@ -1,0 +1,238 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────
+
+enum BookingState {
+  SEARCHING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+  MANUAL_ESCALATION
+}
+
+enum TripType {
+  HIGH_RELIABILITY
+  STANDARD
+}
+
+enum ProviderType {
+  INDIVIDUAL_DRIVER
+  FLEET_OPERATOR
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ─── Models ─────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  phone        String    @unique
+  name         String?
+  email        String?
+  referralCode String    @unique
+  referredBy   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
+
+  bookings Booking[]
+  credits  UserCredit[]
+
+  @@index([phone])
+  @@index([referralCode])
+}
+
+model Booking {
+  id                 String        @id @default(cuid())
+  userId             String
+  userPhone          String
+  pickup             String
+  pickupLat          Float?
+  pickupLng          Float?
+  dropoff            String
+  dropoffLat         Float?
+  dropoffLng         Float?
+  tripType           TripType      @default(HIGH_RELIABILITY)
+  providerId         String?
+  providerType       ProviderType?
+  state              BookingState
+  previousState      BookingState?
+  fareEstimate       Int
+  fareActual         Int?
+  commissionRate     Float         @default(0.10)
+  commissionAmount   Int?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  confirmedAt        DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  failedAt           DateTime?
+  timeoutAt          DateTime?
+  recoveryAttempts   Int           @default(0)
+  manualIntervention Boolean       @default(false)
+  metadata           Json?
+
+  user     User              @relation(fields: [userId], references: [id])
+  provider Provider?         @relation(fields: [providerId], references: [id])
+  attempts BookingAttempt[]
+  logs     BookingLog[]
+
+  @@index([userId])
+  @@index([userPhone])
+  @@index([state])
+  @@index([createdAt])
+  @@index([providerId])
+  @@index([timeoutAt])
+}
+
+model Provider {
+  id              String        @id @default(cuid())
+  name            String
+  phone           String        @unique
+  type            ProviderType
+  vehicleModel    String?
+  vehiclePlate    String?
+  apiEndpoint     String?
+  commissionRate  Float         @default(0.10)
+  paymentTerms    String        @default("T+2")
+  active          Boolean       @default(true)
+  pausedUntil     DateTime?
+  pauseReason     String?
+  reliability     Float         @default(0.85)
+  rating          Float         @default(4.5)
+  totalRides      Int           @default(0)
+  successfulRides Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  lastActiveAt    DateTime?
+
+  bookings Booking[]
+  metrics  ProviderMetric[]
+  attempts BookingAttempt[]
+  payouts  Payout[]
+
+  @@index([type])
+  @@index([active])
+  @@index([reliability])
+  @@index([phone])
+}
+
+model ProviderMetric {
+  id                 String   @id @default(cuid())
+  providerId         String
+  date               DateTime @db.Date
+  totalBookings      Int      @default(0)
+  successfulBookings Int      @default(0)
+  cancelledBookings  Int      @default(0)
+  rejectedBookings   Int      @default(0)
+  failedBookings     Int      @default(0)
+  avgResponseTime    Int?
+  avgAcceptanceTime  Int?
+  onTimePickups      Int      @default(0)
+  latePickups        Int      @default(0)
+  reliabilityScore   Float    @default(0.0)
+  onTimeRate         Float    @default(0.0)
+  totalRevenue       Int      @default(0)
+  totalCommission    Int      @default(0)
+
+  provider Provider @relation(fields: [providerId], references: [id])
+
+  @@unique([providerId, date])
+  @@index([date])
+  @@index([reliabilityScore])
+}
+
+model BookingAttempt {
+  id            String   @id @default(cuid())
+  bookingId     String
+  providerId    String
+  attemptNumber Int
+  success       Boolean
+  responseTime  Int?
+  errorMessage  String?
+  score         Float?
+  reliability   Float?
+  eta           Int?
+  fare          Int?
+  createdAt     DateTime @default(now())
+  metadata      Json?
+
+  booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  provider Provider @relation(fields: [providerId], references: [id])
+
+  @@index([bookingId])
+  @@index([providerId])
+  @@index([success])
+}
+
+model BookingLog {
+  id        String   @id @default(cuid())
+  bookingId String
+  event     String
+  message   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([event])
+  @@index([createdAt])
+}
+
+model UserCredit {
+  id              String    @id @default(cuid())
+  userId          String
+  userPhone       String
+  amount          Int
+  reason          String
+  issued          DateTime  @default(now())
+  used            Boolean   @default(false)
+  usedAt          DateTime?
+  usedInBookingId String?
+  expiresAt       DateTime
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([userPhone])
+  @@index([used])
+  @@index([expiresAt])
+}
+
+model Payout {
+  id               String       @id @default(cuid())
+  providerId       String
+  totalRides       Int
+  totalRevenue     Int
+  commissionAmount Int
+  netPayout        Int
+  status           PayoutStatus @default(PENDING)
+  createdAt        DateTime     @default(now())
+  paidAt           DateTime?
+  paymentMethod    String?
+  transactionId    String?
+
+  provider Provider @relation(fields: [providerId], references: [id])
+
+  @@index([providerId])
+  @@index([status])
+  @@index([createdAt])
+}

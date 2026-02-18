@@ -12,30 +12,31 @@ declare global {
   }
 }
 
-export function authenticateUser(req: Request, res: Response, next: NextFunction) {
+export function authenticateUser(req: Request, res: Response, next: NextFunction): void {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
+      res.status(401).json({
         success: false,
         error: 'Authorization token required'
       });
+      return;
     }
 
     const token = authHeader.substring(7);
-    
+
     const payload = verifyToken(token);
-    
+
     req.user = {
       userId: payload.userId,
       phone: payload.phone
     };
-    
+
     next();
-    
+
   } catch (error) {
-    return res.status(401).json({
+    res.status(401).json({
       success: false,
       error: 'Invalid or expired token'
     });
