@@ -47,16 +47,16 @@ export async function getQuotesHandler(req: Request, res: Response): Promise<voi
                     });
                 });
             }
-        } 
-        // 4. Handle CAB, BIKE_TAXI, AUTO (Requires Provider Scoring)
+        }
+        // 4. Handle CAB, BIKE, AUTO (Requires Provider Scoring)
         else {
             // Get top providers to fulfill the request
             const providers = await findTopProviders(5, [], 'STANDARD');
 
             if (providers.length === 0) {
-                res.status(404).json({ 
-                    success: false, 
-                    error: 'No available providers in your area at the moment. Please try again later.' 
+                res.status(404).json({
+                    success: false,
+                    error: 'No available providers in your area at the moment. Please try again later.'
                 });
                 return;
             }

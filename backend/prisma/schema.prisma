@@ -39,6 +39,13 @@ enum PayoutStatus {
   FAILED
 }
 
+enum TransportMode {
+  CAB
+  BIKE
+  AUTO
+  METRO
+}
+
 // ─── Models ─────────────────────────────────────────────
 
 model User {
@@ -70,6 +77,7 @@ model Booking {
   dropoffLat         Float?
   dropoffLng         Float?
   tripType           TripType      @default(HIGH_RELIABILITY)
+  transportMode      TransportMode @default(CAB)
   providerId         String?
   providerType       ProviderType?
   state              BookingState

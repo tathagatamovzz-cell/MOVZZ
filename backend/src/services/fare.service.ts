@@ -10,7 +10,7 @@
  *
  *  Supported modes:
  *    CAB        — Economy / Comfort / Premium tiers
- *    BIKE_TAXI  — Single tier
+ *    BIKE  — Single tier
  *    AUTO       — Single tier
  *    METRO      — Station-based flat fare tiers
  *
@@ -22,7 +22,7 @@
 
 // ─── Types ──────────────────────────────────────────────
 
-export type TransportMode = 'CAB' | 'BIKE_TAXI' | 'AUTO' | 'METRO';
+export type TransportMode = 'CAB' | 'BIKE' | 'AUTO' | 'METRO';
 
 export interface FareConfig {
     baseFarePaise: number;      // Fixed base charge
@@ -83,7 +83,7 @@ export interface FareEstimateResult {
  * Based on market rates from Uber, Ola, Rapido in Chennai (2025-2026).
  *
  * CAB has 3 tiers to give users Best/Cheapest/Premium options.
- * BIKE_TAXI and AUTO are single-tier since the market doesn't
+ * BIKE and AUTO are single-tier since the market doesn't
  * differentiate much within these modes.
  */
 const CAB_TIERS: FareTier[] = [
@@ -125,7 +125,7 @@ const CAB_TIERS: FareTier[] = [
     },
 ];
 
-const BIKE_TAXI_TIERS: FareTier[] = [
+const BIKE_TIERS: FareTier[] = [
     {
         tierId: 'bike_standard',
         tierName: 'Bike Taxi',
@@ -161,8 +161,8 @@ const AUTO_TIERS: FareTier[] = [
  * Flat-rate tiers by station count.
  */
 const METRO_FARE_SLABS: { maxStations: number; farePaise: number }[] = [
-    { maxStations: 2,  farePaise: 1000 },   // ₹10
-    { maxStations: 5,  farePaise: 2000 },   // ₹20
+    { maxStations: 2, farePaise: 1000 },   // ₹10
+    { maxStations: 5, farePaise: 2000 },   // ₹20
     { maxStations: 10, farePaise: 3000 },   // ₹30
     { maxStations: 15, farePaise: 4000 },   // ₹40
     { maxStations: 25, farePaise: 5000 },   // ₹50
@@ -260,7 +260,7 @@ function toRad(deg: number): number {
  */
 const AVG_SPEEDS_KMPH: Record<TransportMode, number> = {
     CAB: 22,            // Chennai urban average with traffic
-    BIKE_TAXI: 28,      // Bikes weave through traffic faster
+    BIKE: 28,      // Bikes weave through traffic faster
     AUTO: 20,           // Autos are slower in congestion
     METRO: 35,          // Metro is fastest but includes walking time
 };
@@ -406,7 +406,7 @@ export function getSurgeMultiplier(
     }
 
     // Bikes and autos have lower surge caps
-    if (mode === 'BIKE_TAXI') {
+    if (mode === 'BIKE') {
         surge = Math.min(surge, 1.3);  // Cap at 1.3x
     } else if (mode === 'AUTO') {
         surge = Math.min(surge, 1.4);  // Cap at 1.4x
@@ -442,7 +442,7 @@ export function isNearAirport(lat?: number, lng?: number): boolean {
  * fare tiers with full breakdowns.
  *
  * For CAB: returns 3 tiers (Economy, Comfort, Premium)
- * For BIKE_TAXI: returns 1 tier
+ * For BIKE: returns 1 tier
  * For AUTO: returns 1 tier
  * For METRO: returns metro-specific fare breakdowns per line
  *
@@ -484,8 +484,8 @@ export function estimateFares(
         case 'CAB':
             tiers = CAB_TIERS;
             break;
-        case 'BIKE_TAXI':
-            tiers = BIKE_TAXI_TIERS;
+        case 'BIKE':
+            tiers = BIKE_TIERS;
             break;
         case 'AUTO':
             tiers = AUTO_TIERS;
@@ -553,7 +553,7 @@ export function estimateSingleFare(
 
 export const _testExports = {
     CAB_TIERS,
-    BIKE_TAXI_TIERS,
+    BIKE_TIERS,
     AUTO_TIERS,
     METRO_FARE_SLABS,
     CHENNAI_METRO_LINES,

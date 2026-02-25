@@ -7,7 +7,7 @@ export const getQuotesSchema = z.object({
     pickupLng: z.number().min(-180).max(180).optional(),
     dropoffLat: z.number().min(-90).max(90).optional(),
     dropoffLng: z.number().min(-180).max(180).optional(),
-    transportMode: z.enum(['CAB', 'BIKE_TAXI', 'AUTO', 'METRO'])
+    transportMode: z.enum(['CAB', 'BIKE', 'AUTO', 'METRO'])
 });
 
 export type GetQuotesInput = z.infer<typeof getQuotesSchema>;

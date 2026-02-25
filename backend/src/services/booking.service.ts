@@ -71,6 +71,7 @@ export async function createBooking(params: {
     dropoffLat?: number;
     dropoffLng?: number;
     tripType?: 'HIGH_RELIABILITY' | 'STANDARD';
+    transportMode?: 'CAB' | 'BIKE' | 'AUTO' | 'METRO';
 }) {
     const fareEstimate = estimateFare(
         params.pickupLat, params.pickupLng,
@@ -91,6 +92,7 @@ export async function createBooking(params: {
             dropoffLat: params.dropoffLat,
             dropoffLng: params.dropoffLng,
             tripType: tripType as TripType,
+            transportMode: (params.transportMode || 'CAB') as any,
             state: 'SEARCHING',
             fareEstimate,
             timeoutAt: new Date(Date.now() + 5 * 60 * 1000), // 5 min timeout

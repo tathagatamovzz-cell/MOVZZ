@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useBookingStore } from './stores/bookingStore';
+import { useAuthStore } from './stores/authStore';
+
+
 
 const transportModes = [
   { id: "cab", label: "Cab", icon: CabIcon, desc: "Doorstep comfort and AC ride" },
@@ -13,6 +16,9 @@ const sourceChips = ["Pacifica Aurum 1 Block-B5", "Anna Nagar", "Velachery"];
 const laneLabels = ["Cab", "Bike", "Auto", "Metro", "Reliable", "Parallel", "Safe ETA"];
 
 const screens = ["landing", "auth", "transport", "destination", "results"];
+const isVerifyingRef = React.useRef(false);
+const isProcessing = React.useRef(false);
+
 
 function App() {
   const [screen, setScreen] = useState("landing");
@@ -22,11 +28,15 @@ function App() {
   const [destination, setDestination] = useState("");
   const [selectedRide, setSelectedRide] = useState(null);
   const [booked, setBooked] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [otpCode, setOtpCode] = useState("");
 
-  // Hook into our backend data store!
-  const { quotes, isLoading, error, fetchQuotes, createBooking } = useBookingStore();
+  // Hook into auth store
+  const { otpSent, isAuthenticated, isLoading: isAuthLoading, error: authError, sendOTP, verifyOTP } = useAuthStore();
 
-  // Reset selected ride when quotes change
+  // REPLACE your current useBookingStore call with this updated one:
+  const { quotes, isLoading, error, fetchQuotes, createBooking, currentBooking, pollStatus } = useBookingStore();
+
   useEffect(() => {
     if (quotes && quotes.length > 0) {
       setSelectedRide(quotes[0]);
@@ -34,6 +44,13 @@ function App() {
       setSelectedRide(null);
     }
   }, [quotes]);
+
+  useEffect(() => {
+  if (isAuthenticated && screen === "auth") {
+    moveTo("transport");
+  }
+}, [isAuthenticated, screen]);
+
 
   function moveTo(next) {
     if (!screens.includes(next)) return;
@@ -47,23 +64,74 @@ function App() {
     if (!destination.trim()) return;
     setBooked(false);
     setScreen("results");
-    
+
     // Fetch real data from the backend!
     await fetchQuotes(source, destination, transport);
   }
 
   async function bookRide() {
     if (!selectedRide) return;
-    
+
     // Call the backend to create the booking!
-    const success = await createBooking(source, destination);
-    
+    const success = await createBooking(source, destination, selectedRide.id);
+
     // If the database successfully creates the ride, show the success panel
     if (success) {
       setBooked(true);
     }
   }
+
+  async function handleSendOTP() {
+    if (!phoneNumber) return;
+    await sendOTP(phoneNumber);
+  }
+
+
+// 2. Update the verify function:
+async function handleVerifyOTP() {
+  // If we are already processing, or already authenticated, KILL the request immediately
+  if (isProcessing.current || isAuthenticated || !otpCode) return;
   
+  isProcessing.current = true; // Instant synchronous lock
+
+  try {
+    const success = await verifyOTP(otpCode);
+    if (success) {
+      setOtpCode("");
+      moveTo("transport");
+    }
+  } finally {
+    // Keep it locked for 1 second just to swallow the "ghost clicks"
+    setTimeout(() => { isProcessing.current = false; }, 1000);
+  }
+}
+
+// 3. Add this "Safety Net" to force navigation if the store succeeds
+useEffect(() => {
+  if (isAuthenticated && screen === "auth") {
+    moveTo("transport");
+  }
+}, [isAuthenticated, screen]);
+
+  useEffect(() => {
+    let intervalId;
+    
+    if (booked && currentBooking?.id) {
+      // Check if the ride is in a final state
+      const isTerminalState = ['COMPLETED', 'FAILED', 'CANCELLED'].includes(currentBooking.state);
+      
+      if (!isTerminalState) {
+        // Poll every 5 seconds
+        intervalId = setInterval(() => {
+          pollStatus(currentBooking.id);
+        }, 5000);
+      }
+    }
+    
+    // Cleanup interval on unmount or when dependencies change
+    return () => clearInterval(intervalId);
+  }, [booked, currentBooking, pollStatus]);
+
   return (
     <main className="app-shell">
       <section className="phone-frame">
@@ -118,8 +186,11 @@ function App() {
               </article>
             </div>
             <div className="action-dock">
-              <button className="btn primary" onClick={() => moveTo("auth")}>Start Ride</button>
-            </div>
+    {/* NEW: Route to 'transport' if logged in, otherwise route to 'auth' */}
+    <button className="btn primary" onClick={() => moveTo(isAuthenticated ? "transport" : "auth")}>
+      Start Ride
+    </button>
+  </div>
           </div>
         </section>
 
@@ -128,38 +199,59 @@ function App() {
           <h2>Sign in to MOVZZ</h2>
           <p className="copy">Secure access with enterprise-grade onboarding flow.</p>
 
-          <div className="auth-tabs">
-            <button
-              className={`tab ${authTab === "signin" ? "active" : ""}`}
-              onClick={() => setAuthTab("signin")}
-            >
-              Sign In
-            </button>
-            <button
-              className={`tab ${authTab === "signup" ? "active" : ""}`}
-              onClick={() => setAuthTab("signup")}
-            >
-              Sign Up
-            </button>
-          </div>
-
-          <label className="field">
-            <span>{authTab === "signin" ? "Email" : "Work Email"}</span>
-            <input type="email" placeholder="name@company.com" />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input type="password" placeholder="••••••••" />
-          </label>
-
-          <div className="stack">
-            <button className="btn provider">Continue with Google</button>
-            <button className="btn provider">Continue with Apple</button>
-            <button className="btn provider">Continue with Phone Number</button>
-          </div>
-
-          <div className="action-dock">
-            <button className="btn primary" onClick={() => moveTo("transport")}>Continue</button>
+          <div className="auth-flow" style={{ marginTop: '2rem' }}>
+            {authError && <p style={{ color: 'var(--warn)', marginBottom: '1rem' }}>{authError}</p>}
+            
+            {!otpSent ? (
+              // STEP 1: ENTER PHONE NUMBER
+              <>
+                <label className="field">
+                  <span>Phone Number</span>
+                  <input 
+                    type="tel" 
+                    placeholder="9876543210" 
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                  />
+                </label>
+                <div className="action-dock">
+                  <button 
+                    className="btn primary" 
+                    onClick={handleSendOTP} 
+                    disabled={isAuthLoading || phoneNumber.length < 10}
+                  >
+                    {isAuthLoading ? "Sending..." : "Send OTP"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              // STEP 2: ENTER OTP
+              <>
+                <p style={{ marginBottom: '1rem', fontSize: '14px' }}>
+                  OTP sent to {useAuthStore.getState().phone}
+                </p>
+                <label className="field">
+                  <span>Enter 6-digit OTP</span>
+                  <input 
+                    type="text" 
+                    maxLength="6"
+                    placeholder="123456" 
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value)}
+                  />
+                </label>
+                <div className="action-dock">
+                  <button 
+    className="btn primary" 
+    onClick={handleVerifyOTP} 
+    // UPDATED: Disable the button if they are already authenticated
+    disabled={isAuthLoading || isAuthenticated || otpCode.length < 6}
+  >
+    {isAuthLoading ? "Verifying..." : isAuthenticated ? "Verified!" : "Verify & Continue"}
+  </button>
+                </div>
+              </>
+            )}
           </div>
         </section>
 
@@ -282,15 +374,14 @@ function App() {
               quotes.map((item) => {
                 const active = selectedRide?.id === item.id;
                 // Map the backend tag to the CSS classes
-                const toneClass = item.tag === 'Cheapest' ? 'cheap' : item.tag === 'Premium' ? 'high' : 'best';
-                
+                const isHighlyReliable = item.reliability > 90;
                 return (
                   <button
                     className={`result-card ${toneClass} ${active ? "active" : ""}`}
                     key={item.id}
                     onClick={() => setSelectedRide(item)}
                   >
-                    {item.tag && <span className="tag">{item.tag}</span>}
+                    {item.tag && <span className="tag">{tagLabel}</span>}
                     <div className="result-head">
                       <h3>{item.type || item.line} {item.provider ? `via ${item.provider}` : ''}</h3>
                       <strong>Rs {item.price}</strong>
@@ -315,9 +406,13 @@ function App() {
 
           {booked && (
             <div className="booking-panel">
-              <p>Confirmed</p>
+              {/* Display the live state from the backend state machine */}
+              <p>Status: {currentBooking?.state || 'SEARCHING'}</p>
               <h4>{selectedRide?.type || selectedRide?.line} is on the way</h4>
-              <span>{selectedRide?.provider ? `Driver assigned (${selectedRide?.provider})` : `Metro route confirmed`} • ETA {selectedRide?.eta} min • Live tracking enabled</span>
+              <span>
+                {currentBooking?.providerId ? `Driver assigned` : `Looking for reliable providers...`} 
+                • ETA {selectedRide?.eta} min • Live tracking enabled
+              </span>
             </div>
           )}
         </section>

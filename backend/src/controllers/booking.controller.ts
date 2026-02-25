@@ -36,6 +36,7 @@ export async function createBookingHandler(req: Request, res: Response): Promise
         const booking = await createBooking({
             userId: req.user.userId,
             userPhone: req.user.phone,
+            transportMode: result.data.transportMode,
             ...result.data,
         });
 
