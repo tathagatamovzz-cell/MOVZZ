@@ -1,8 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useBookingStore } from './stores/bookingStore';
 import { useAuthStore } from './stores/authStore';
-
-
 
 const transportModes = [
   { id: "cab", label: "Cab", icon: CabIcon, desc: "Doorstep comfort and AC ride" },
@@ -16,13 +14,25 @@ const sourceChips = ["Pacifica Aurum 1 Block-B5", "Anna Nagar", "Velachery"];
 const laneLabels = ["Cab", "Bike", "Auto", "Metro", "Reliable", "Parallel", "Safe ETA"];
 
 const screens = ["landing", "auth", "transport", "destination", "results"];
-const isVerifyingRef = React.useRef(false);
-const isProcessing = React.useRef(false);
 
+// FIX 1: Derive tone class and tag label from a quote item's tag field.
+// Previously these were referenced inside quotes.map() but never defined,
+// causing a ReferenceError that crashed the results screen.
+function getToneClass(tag) {
+  if (tag === "BEST") return "best";
+  if (tag === "CHEAPEST") return "cheap";
+  return "high";
+}
+
+function getTagLabel(tag) {
+  if (tag === "BEST") return "Best Match";
+  if (tag === "CHEAPEST") return "Cheapest";
+  if (tag === "PREMIUM") return "Premium";
+  return tag;
+}
 
 function App() {
   const [screen, setScreen] = useState("landing");
-  const [authTab, setAuthTab] = useState("signin");
   const [transport, setTransport] = useState("cab");
   const [source, setSource] = useState("Pacifica Aurum 1 Block-B5");
   const [destination, setDestination] = useState("");
@@ -31,10 +41,12 @@ function App() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [otpCode, setOtpCode] = useState("");
 
-  // Hook into auth store
-  const { otpSent, isAuthenticated, isLoading: isAuthLoading, error: authError, sendOTP, verifyOTP } = useAuthStore();
+  // FIX 2: useRef calls moved inside the component where hooks belong.
+  // Previously declared at module scope, which violates the Rules of Hooks
+  // and throws in strict mode.
+  const isProcessing = useRef(false);
 
-  // REPLACE your current useBookingStore call with this updated one:
+  const { otpSent, phone, isAuthenticated, isLoading: isAuthLoading, error: authError, sendOTP, verifyOTP } = useAuthStore();
   const { quotes, isLoading, error, fetchQuotes, createBooking, currentBooking, pollStatus } = useBookingStore();
 
   useEffect(() => {
@@ -45,12 +57,26 @@ function App() {
     }
   }, [quotes]);
 
+  // FIX 3: Removed the duplicate useEffect that was registered twice for the
+  // same auth redirect logic. One instance is sufficient.
   useEffect(() => {
-  if (isAuthenticated && screen === "auth") {
-    moveTo("transport");
-  }
-}, [isAuthenticated, screen]);
+    if (isAuthenticated && screen === "auth") {
+      moveTo("transport");
+    }
+  }, [isAuthenticated, screen]);
 
+  useEffect(() => {
+    let intervalId;
+    if (booked && currentBooking?.id) {
+      const isTerminalState = ['COMPLETED', 'FAILED', 'CANCELLED'].includes(currentBooking.state);
+      if (!isTerminalState) {
+        intervalId = setInterval(() => {
+          pollStatus(currentBooking.id);
+        }, 5000);
+      }
+    }
+    return () => clearInterval(intervalId);
+  }, [booked, currentBooking, pollStatus]);
 
   function moveTo(next) {
     if (!screens.includes(next)) return;
@@ -64,18 +90,12 @@ function App() {
     if (!destination.trim()) return;
     setBooked(false);
     setScreen("results");
-
-    // Fetch real data from the backend!
     await fetchQuotes(source, destination, transport);
   }
 
   async function bookRide() {
     if (!selectedRide) return;
-
-    // Call the backend to create the booking!
     const success = await createBooking(source, destination, selectedRide.id);
-
-    // If the database successfully creates the ride, show the success panel
     if (success) {
       setBooked(true);
     }
@@ -86,51 +106,19 @@ function App() {
     await sendOTP(phoneNumber);
   }
 
-
-// 2. Update the verify function:
-async function handleVerifyOTP() {
-  // If we are already processing, or already authenticated, KILL the request immediately
-  if (isProcessing.current || isAuthenticated || !otpCode) return;
-  
-  isProcessing.current = true; // Instant synchronous lock
-
-  try {
-    const success = await verifyOTP(otpCode);
-    if (success) {
-      setOtpCode("");
-      moveTo("transport");
-    }
-  } finally {
-    // Keep it locked for 1 second just to swallow the "ghost clicks"
-    setTimeout(() => { isProcessing.current = false; }, 1000);
-  }
-}
-
-// 3. Add this "Safety Net" to force navigation if the store succeeds
-useEffect(() => {
-  if (isAuthenticated && screen === "auth") {
-    moveTo("transport");
-  }
-}, [isAuthenticated, screen]);
-
-  useEffect(() => {
-    let intervalId;
-    
-    if (booked && currentBooking?.id) {
-      // Check if the ride is in a final state
-      const isTerminalState = ['COMPLETED', 'FAILED', 'CANCELLED'].includes(currentBooking.state);
-      
-      if (!isTerminalState) {
-        // Poll every 5 seconds
-        intervalId = setInterval(() => {
-          pollStatus(currentBooking.id);
-        }, 5000);
+  async function handleVerifyOTP() {
+    if (isProcessing.current || isAuthenticated || !otpCode) return;
+    isProcessing.current = true;
+    try {
+      const success = await verifyOTP(otpCode);
+      if (success) {
+        setOtpCode("");
+        moveTo("transport");
       }
+    } finally {
+      setTimeout(() => { isProcessing.current = false; }, 1000);
     }
-    
-    // Cleanup interval on unmount or when dependencies change
-    return () => clearInterval(intervalId);
-  }, [booked, currentBooking, pollStatus]);
+  }
 
   return (
     <main className="app-shell">
@@ -141,6 +129,7 @@ useEffect(() => {
           <span>5G</span>
         </header>
 
+        {/* LANDING */}
         <section className={`screen landing-screen ${screen === "landing" ? "is-active" : ""}`}>
           <div className="landing-content">
             <div className="landing-topline" />
@@ -186,14 +175,14 @@ useEffect(() => {
               </article>
             </div>
             <div className="action-dock">
-    {/* NEW: Route to 'transport' if logged in, otherwise route to 'auth' */}
-    <button className="btn primary" onClick={() => moveTo(isAuthenticated ? "transport" : "auth")}>
-      Start Ride
-    </button>
-  </div>
+              <button className="btn primary" onClick={() => moveTo(isAuthenticated ? "transport" : "auth")}>
+                Start Ride
+              </button>
+            </div>
           </div>
         </section>
 
+        {/* AUTH */}
         <section className={`screen ${screen === "auth" ? "is-active" : ""}`}>
           <p className="kicker">Authentication</p>
           <h2>Sign in to MOVZZ</h2>
@@ -201,23 +190,22 @@ useEffect(() => {
 
           <div className="auth-flow" style={{ marginTop: '2rem' }}>
             {authError && <p style={{ color: 'var(--warn)', marginBottom: '1rem' }}>{authError}</p>}
-            
+
             {!otpSent ? (
-              // STEP 1: ENTER PHONE NUMBER
               <>
                 <label className="field">
                   <span>Phone Number</span>
-                  <input 
-                    type="tel" 
-                    placeholder="9876543210" 
+                  <input
+                    type="tel"
+                    placeholder="9876543210"
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
                   />
                 </label>
                 <div className="action-dock">
-                  <button 
-                    className="btn primary" 
-                    onClick={handleSendOTP} 
+                  <button
+                    className="btn primary"
+                    onClick={handleSendOTP}
                     disabled={isAuthLoading || phoneNumber.length < 10}
                   >
                     {isAuthLoading ? "Sending..." : "Send OTP"}
@@ -225,36 +213,39 @@ useEffect(() => {
                 </div>
               </>
             ) : (
-              // STEP 2: ENTER OTP
               <>
+                {/* FIX 4: Was useAuthStore.getState().phone — a direct store read
+                    that bypasses React reactivity. Now reads from the destructured
+                    `phone` value at the top of the component, which re-renders
+                    correctly when the store updates. */}
                 <p style={{ marginBottom: '1rem', fontSize: '14px' }}>
-                  OTP sent to {useAuthStore.getState().phone}
+                  OTP sent to {phone}
                 </p>
                 <label className="field">
                   <span>Enter 6-digit OTP</span>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     maxLength="6"
-                    placeholder="123456" 
+                    placeholder="123456"
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value)}
                   />
                 </label>
                 <div className="action-dock">
-                  <button 
-    className="btn primary" 
-    onClick={handleVerifyOTP} 
-    // UPDATED: Disable the button if they are already authenticated
-    disabled={isAuthLoading || isAuthenticated || otpCode.length < 6}
-  >
-    {isAuthLoading ? "Verifying..." : isAuthenticated ? "Verified!" : "Verify & Continue"}
-  </button>
+                  <button
+                    className="btn primary"
+                    onClick={handleVerifyOTP}
+                    disabled={isAuthLoading || isAuthenticated || otpCode.length < 6}
+                  >
+                    {isAuthLoading ? "Verifying..." : isAuthenticated ? "Verified!" : "Verify & Continue"}
+                  </button>
                 </div>
               </>
             )}
           </div>
         </section>
 
+        {/* TRANSPORT */}
         <section className={`screen ${screen === "transport" ? "is-active" : ""}`}>
           <p className="kicker">Step 1</p>
           <h2>Select transport mode</h2>
@@ -269,9 +260,7 @@ useEffect(() => {
                   className={`mode-item ${transport === mode.id ? "selected" : ""}`}
                   onClick={() => setTransport(mode.id)}
                 >
-                  <span className="mode-icon">
-                    <Icon />
-                  </span>
+                  <span className="mode-icon"><Icon /></span>
                   <span className="mode-copy">
                     <strong>{mode.label}</strong>
                     <small>{mode.desc}</small>
@@ -287,6 +276,7 @@ useEffect(() => {
           </div>
         </section>
 
+        {/* DESTINATION */}
         <section className={`screen ${screen === "destination" ? "is-active" : ""}`}>
           <p className="kicker">Step 2</p>
           <h2>Set pickup and destination</h2>
@@ -302,7 +292,7 @@ useEffect(() => {
                 <input
                   type="text"
                   value={source}
-                  onChange={(event) => setSource(event.target.value)}
+                  onChange={(e) => setSource(e.target.value)}
                   placeholder="Current location"
                 />
               </label>
@@ -311,7 +301,7 @@ useEffect(() => {
                 <input
                   type="text"
                   value={destination}
-                  onChange={(event) => setDestination(event.target.value)}
+                  onChange={(e) => setDestination(e.target.value)}
                   placeholder="Terminal 1, Chennai Airport"
                 />
               </label>
@@ -320,16 +310,12 @@ useEffect(() => {
 
           <div className="chips">
             {sourceChips.map((chip) => (
-              <button key={chip} className="chip" onClick={() => setSource(chip)}>
-                {chip}
-              </button>
+              <button key={chip} className="chip" onClick={() => setSource(chip)}>{chip}</button>
             ))}
           </div>
           <div className="chips">
             {destinationChips.map((chip) => (
-              <button key={chip} className="chip" onClick={() => setDestination(chip)}>
-                {chip}
-              </button>
+              <button key={chip} className="chip" onClick={() => setDestination(chip)}>{chip}</button>
             ))}
           </div>
 
@@ -340,6 +326,7 @@ useEffect(() => {
           </div>
         </section>
 
+        {/* RESULTS */}
         <section className={`screen ${screen === "results" ? "is-active" : ""}`}>
           <p className="kicker">Top Ranked Options</p>
           <h2>Choose and book instantly</h2>
@@ -371,10 +358,13 @@ useEffect(() => {
                 <button className="btn secondary" onClick={() => setScreen("destination")}>Go Back</button>
               </div>
             ) : (
+              // FIX 1 APPLIED: toneClass and tagLabel are now derived per item
+              // using the helper functions defined above the component.
               quotes.map((item) => {
                 const active = selectedRide?.id === item.id;
-                // Map the backend tag to the CSS classes
-                const isHighlyReliable = item.reliability > 90;
+                const toneClass = getToneClass(item.tag);
+                const tagLabel = getTagLabel(item.tag);
+
                 return (
                   <button
                     className={`result-card ${toneClass} ${active ? "active" : ""}`}
@@ -383,11 +373,17 @@ useEffect(() => {
                   >
                     {item.tag && <span className="tag">{tagLabel}</span>}
                     <div className="result-head">
-                      <h3>{item.type || item.line} {item.provider ? `via ${item.provider}` : ''}</h3>
-                      <strong>Rs {item.price}</strong>
+                      <h3>
+                        {item.type || item.line}
+                        {item.provider ? ` via ${item.provider}` : ''}
+                      </h3>
+                      <strong>₹{item.price}</strong>
                     </div>
                     <p className="result-meta">
-                      {item.reliability ? `Reliability ${item.reliability}%` : `${item.stations} stations`} • ETA {item.eta} min
+                      {item.reliability
+                        ? `Reliability ${item.reliability}%`
+                        : `${item.stations} stations`
+                      } • ETA {item.eta} min
                     </p>
                     {item.score && (
                       <p className="reason">Match Score: {item.score}/100</p>
@@ -399,23 +395,30 @@ useEffect(() => {
           </div>
 
           <div className="action-dock">
-            <button className="btn primary" onClick={bookRide} disabled={!selectedRide || booked}>
-              {booked ? "Ride Booked" : `Book ${selectedRide?.type || selectedRide?.line || "Ride"} Now`}
+            <button
+              className="btn primary"
+              onClick={bookRide}
+              disabled={!selectedRide || booked}
+            >
+              {booked
+                ? "Ride Booked"
+                : `Book ${selectedRide?.type || selectedRide?.line || "Ride"} Now`
+              }
             </button>
           </div>
 
           {booked && (
             <div className="booking-panel">
-              {/* Display the live state from the backend state machine */}
               <p>Status: {currentBooking?.state || 'SEARCHING'}</p>
               <h4>{selectedRide?.type || selectedRide?.line} is on the way</h4>
               <span>
-                {currentBooking?.providerId ? `Driver assigned` : `Looking for reliable providers...`} 
-                • ETA {selectedRide?.eta} min • Live tracking enabled
+                {currentBooking?.providerId ? 'Driver assigned' : 'Looking for reliable providers...'}
+                {' '}• ETA {selectedRide?.eta} min • Live tracking enabled
               </span>
             </div>
           )}
         </section>
+
       </section>
     </main>
   );

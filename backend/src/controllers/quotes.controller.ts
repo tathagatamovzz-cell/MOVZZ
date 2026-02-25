@@ -22,7 +22,7 @@ export async function getQuotesHandler(req: Request, res: Response): Promise<voi
         const quoteId = crypto.randomUUID();
         const quotes: any[] = [];
 
-        // 2. Get Fare Estimates (Handles surge, distance, base rates)
+        // 2. Get Fare Estimates
         const fareEstimate = estimateFares(
             data.transportMode,
             data.pickupLat,
@@ -31,7 +31,7 @@ export async function getQuotesHandler(req: Request, res: Response): Promise<voi
             data.dropoffLng
         );
 
-        // 3. Handle METRO Mode (Bypasses provider scoring)
+        // 3. Handle METRO Mode
         if (data.transportMode === 'METRO') {
             if (fareEstimate.metroFares) {
                 fareEstimate.metroFares.forEach((mFare, index) => {
@@ -41,16 +41,17 @@ export async function getQuotesHandler(req: Request, res: Response): Promise<voi
                         line: mFare.line,
                         stations: mFare.stationCount,
                         price: mFare.totalFareRupees,
-                        eta: 2 + index, // Mock initial wait time
+                        eta: 2 + index,
                         duration: `${mFare.estimatedDurationMin} min`,
-                        farePaise: mFare.totalFare
+                        farePaise: mFare.totalFare,
+                        // Metro has no provider — null here is intentional
+                        providerId: null,
                     });
                 });
             }
         }
-        // 4. Handle CAB, BIKE, AUTO (Requires Provider Scoring)
+        // 4. Handle CAB, BIKE, AUTO
         else {
-            // Get top providers to fulfill the request
             const providers = await findTopProviders(5, [], 'STANDARD');
 
             if (providers.length === 0) {
@@ -61,51 +62,73 @@ export async function getQuotesHandler(req: Request, res: Response): Promise<voi
                 return;
             }
 
-            // Map the calculated fare tiers to the available providers
             fareEstimate.fares.forEach((fareTier, index) => {
-                // Assign a provider to this tier (cycling through available ones)
                 const provider = providers[index % providers.length];
 
-                // Assign UI Tags based on the tier
                 let tag = null;
-                if (index === 0) tag = "Cheapest";
-                if (index === fareEstimate.fares.length - 1 && fareEstimate.fares.length > 1) tag = "Premium";
-                if (index === 0 && provider.score >= 90) tag = "Best Match"; // Override if it's highly reliable
+                if (index === 0) tag = 'CHEAPEST';
+                if (index === fareEstimate.fares.length - 1 && fareEstimate.fares.length > 1) tag = 'PREMIUM';
+                if (index === 0 && provider.score >= 90) tag = 'BEST';
 
                 quotes.push({
                     id: crypto.randomUUID(),
                     providerId: provider.providerId,
                     provider: provider.name,
                     type: fareTier.tierName,
-                    logo: data.transportMode === 'CAB' ? 'uber' : data.transportMode === 'AUTO' ? 'ola' : 'rapido', // Mock logo for frontend mapping
+                    logo: data.transportMode === 'CAB' ? 'uber' : data.transportMode === 'AUTO' ? 'ola' : 'rapido',
                     price: fareTier.totalFareRupees,
-                    eta: 4 + index * 2, // Mock ETA based on proximity
+                    eta: 4 + index * 2,
                     score: Math.round(provider.score),
                     reliability: Math.round(provider.reliability * 100),
-                    tag: tag,
+                    tag,
                     surge: fareTier.surgeMultiplier > 1.0,
-                    farePaise: fareTier.totalFare
+                    farePaise: fareTier.totalFare,
                 });
             });
         }
 
-        // 5. Structure the Response
+        // 5. Structure Response
         const responseData = {
             quoteId,
             quotes,
             metadata: {
                 distanceKm: fareEstimate.distanceKm,
                 estimatedDurationMin: fareEstimate.estimatedDurationMin,
-                quotesValidFor: 300 // Valid for 5 minutes
-            }
+                quotesValidFor: 300,
+            },
         };
 
-        // 6. Cache the quotes in Redis
+        // 6. Cache the full session response under the session quoteId.
+        //    Used for auditing and potential replay.
         await redis.set(`quote:${quoteId}`, JSON.stringify(responseData), 300);
+
+        // FIX: Also cache each individual quote under its own ID.
+        //
+        // The frontend passes selectedRide.id (the individual quote UUID) as
+        // the quoteId field when creating a booking — not the session quoteId.
+        // Without this, booking.service.ts would look up `quote_item:<id>` and
+        // get a cache miss on every booking, falling back to re-scoring every time
+        // and never honouring the user's selection from the results screen.
+        //
+        // Each individual cache entry stores only what booking.service.ts needs:
+        // the providerId and the agreed fare in paise. TTL matches the session (5min).
+        await Promise.all(
+            quotes.map(quote =>
+                redis.set(
+                    `quote_item:${quote.id}`,
+                    JSON.stringify({
+                        providerId: quote.providerId,
+                        farePaise: quote.farePaise,
+                        transportMode: data.transportMode,
+                    }),
+                    300
+                )
+            )
+        );
 
         res.json({
             success: true,
-            data: responseData
+            data: responseData,
         });
 
     } catch (error) {

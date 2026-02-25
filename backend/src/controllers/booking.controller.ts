@@ -37,6 +37,11 @@ export async function createBookingHandler(req: Request, res: Response): Promise
             userId: req.user.userId,
             userPhone: req.user.phone,
             transportMode: result.data.transportMode,
+            // FIX 1: quoteId now passes through to the service. The validator
+            // previously stripped it as an unknown key, breaking the quote-to-booking
+            // linkage. The service can use this to look up the cached quote and
+            // pre-select the provider the user chose, rather than re-running scoring.
+            quoteId: result.data.quoteId,
             ...result.data,
         });
 
@@ -50,6 +55,14 @@ export async function createBookingHandler(req: Request, res: Response): Promise
                 fareEstimate: booking.fareEstimate,
                 fareEstimateRupees: booking.fareEstimate / 100,
                 tripType: booking.tripType,
+                // FIX 2: Added providerId to the create response.
+                // The frontend booking panel checks currentBooking?.providerId to
+                // decide between "Driver assigned" and "Looking for reliable providers..."
+                // Without this field in the create response, the panel always showed
+                // "Looking for reliable providers..." until the first poll fired 5s later,
+                // even if a provider was assigned synchronously during booking creation
+                // (e.g. by the 8-second simulation timeout in booking.service.ts).
+                providerId: booking.providerId ?? null,
                 timeoutAt: booking.timeoutAt,
                 createdAt: booking.createdAt,
             },
@@ -95,6 +108,10 @@ export async function getBookingHandler(req: Request, res: Response): Promise<vo
                 fareActualRupees: booking.fareActual ? booking.fareActual / 100 : null,
                 tripType: booking.tripType,
                 provider: booking.provider,
+                // Included here for consistency with the create response shape,
+                // so the frontend polling logic sees the same field names on both
+                // initial creation and subsequent status checks.
+                providerId: booking.providerId ?? null,
                 attempts: booking.attempts.length,
                 logs: booking.logs,
                 createdAt: booking.createdAt,
