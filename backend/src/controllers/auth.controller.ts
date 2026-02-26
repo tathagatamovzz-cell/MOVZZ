@@ -30,9 +30,11 @@ export async function sendOTP(req: Request, res: Response): Promise<void> {
 
     res.json({
       success: true,
-      channel: isEmail ? 'email' : 'whatsapp',
-      message: `OTP sent to ${isEmail ? 'email' : 'WhatsApp'} (Simulated)`,
-      otp: process.env.NODE_ENV !== 'production' ? otp : undefined
+      data: {
+        channel: isEmail ? 'email' : 'whatsapp',
+        message: `OTP sent to ${isEmail ? 'email' : 'WhatsApp'} (Simulated)`,
+        otp: process.env.NODE_ENV !== 'production' ? otp : undefined
+      }
     });
   } catch (error: any) {
     console.error('[MOVZZ AUTH] Fatal Error:', error.message);
@@ -76,7 +78,7 @@ export async function verifyOTP(req: Request, res: Response): Promise<void> {
     }
 
     const token = generateToken({ userId: user.id, phone: user.phone });
-    res.json({ success: true, token, user });
+    res.json({ success: true, data: { token, user } });
 
   } catch (error: any) {
     console.error('[MOVZZ AUTH] Verify Error:', error.message);
