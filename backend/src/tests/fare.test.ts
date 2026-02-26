@@ -97,6 +97,7 @@ async function runAllTests() {
             LOCATIONS.airport.lat, LOCATIONS.airport.lng,
             LOCATIONS.central.lat, LOCATIONS.central.lng
         );
+        // Straight line ~13 km, road factor 1.35 → ~17.5 km
         assertRange(dist, 12, 22, 'Airport-Central distance');
     });
 
@@ -125,6 +126,8 @@ async function runAllTests() {
     });
 
     await test('Road factor should make distance > straight-line', () => {
+        // Without road factor, Airport to Central ≈ 13km
+        // With 1.35x factor, should be ≈ 17.5km
         const dist = calculateDistance(
             LOCATIONS.airport.lat, LOCATIONS.airport.lng,
             LOCATIONS.central.lat, LOCATIONS.central.lng
@@ -138,12 +141,12 @@ async function runAllTests() {
 
     await test('CAB duration for 20km should be ~57-60 min', () => {
         const dur = estimateDuration(20, 'CAB');
+        // 20km / 22kmph * 60 + 3min buffer ≈ 57.5 min
         assertRange(dur, 50, 70, 'CAB 20km duration');
     });
 
-    // FIX: Was 'BIKE_TAXI' — correct enum value is 'BIKE'
     await test('BIKE should be faster than CAB for same distance', () => {
-        const bikeDur = estimateDuration(15, 'BIKE');
+        const bikeDur = estimateDuration(15, 'BIKE_TAXI');
         const cabDur = estimateDuration(15, 'CAB');
         assert(bikeDur < cabDur, `Bike (${bikeDur}min) should be faster than cab (${cabDur}min)`);
     });
@@ -161,6 +164,7 @@ async function runAllTests() {
     });
 
     await test('Duration should include 3-min buffer', () => {
+        // 0km distance should still show ~3 min (buffer)
         const dur = estimateDuration(0, 'CAB');
         assert(dur === 3, `Zero distance should return 3 min buffer, got ${dur}`);
     });
@@ -173,6 +177,7 @@ async function runAllTests() {
 
     await test('Economy cab: 10km, 30min, no surge', () => {
         const fare = calculateTierFare(econTier, 10, 30, 1.0);
+        // Base: 5000 + Distance: 10*1200=12000 + Time: 30*150=4500 = 21500 paise = ₹215
         assert(fare.baseFare === 5000, `Base fare should be 5000, got ${fare.baseFare}`);
         assert(fare.distanceCharge === 12000, `Distance charge should be 12000, got ${fare.distanceCharge}`);
         assert(fare.timeCharge === 4500, `Time charge should be 4500, got ${fare.timeCharge}`);
@@ -185,6 +190,7 @@ async function runAllTests() {
 
     await test('Economy cab: very short ride should enforce minimum fare', () => {
         const fare = calculateTierFare(econTier, 0.5, 2, 1.0);
+        // Base: 5000 + Distance: 0.5*1200=600 + Time: 2*150=300 = 5900 < 8000 min
         assert(fare.totalFare === 8000, `Should enforce min fare 8000, got ${fare.totalFare}`);
         assert(fare.minFareApplied === true, 'Min fare should apply');
         assert(fare.totalFareRupees === 80, `Rupees should be 80, got ${fare.totalFareRupees}`);
@@ -192,13 +198,14 @@ async function runAllTests() {
 
     await test('Economy cab with 1.5x surge', () => {
         const fare = calculateTierFare(econTier, 10, 30, 1.5);
+        // Subtotal: 21500, surge: 21500 * 0.5 = 10750, total: 32250
         assert(fare.surgeMultiplier === 1.5, `Surge should be 1.5, got ${fare.surgeMultiplier}`);
         assert(fare.surgeCharge === 10750, `Surge charge should be 10750, got ${fare.surgeCharge}`);
         assert(fare.totalFare === 32250, `Total should be 32250, got ${fare.totalFare}`);
     });
 
     await test('Premium cab should be more expensive than economy', () => {
-        const premTier = _testExports.CAB_TIERS[2];
+        const premTier = _testExports.CAB_TIERS[2]; // Premium
         const econFare = calculateTierFare(econTier, 15, 40, 1.0);
         const premFare = calculateTierFare(premTier, 15, 40, 1.0);
         assert(premFare.totalFare > econFare.totalFare,
@@ -223,11 +230,11 @@ async function runAllTests() {
         const result = estimateFares('CAB',
             LOCATIONS.airport.lat, LOCATIONS.airport.lng,
             LOCATIONS.tNagar.lat, LOCATIONS.tNagar.lng,
-            1.0
+            1.0 // no surge for deterministic test
         );
         assert(result.transportMode === 'CAB', 'Mode should be CAB');
         assert(result.fares.length === 3, `Should have 3 tiers, got ${result.fares.length}`);
-        assert(result.fares[0].tierId === 'cab_economy', `First tier should be economy`);
+        assert(result.fares[0].tierId === 'cab_economy', `First tier should be economy, got ${result.fares[0].tierId}`);
         assert(result.fares[1].tierId === 'cab_comfort', `Second should be comfort`);
         assert(result.fares[2].tierId === 'cab_premium', `Third should be premium`);
     });
@@ -244,9 +251,8 @@ async function runAllTests() {
             'Comfort should be cheaper than premium');
     });
 
-    // FIX: Was 'BIKE_TAXI' — correct enum value is 'BIKE'
-    await test('BIKE mode returns 1 tier', () => {
-        const result = estimateFares('BIKE',
+    await test('BIKE_TAXI mode returns 1 tier', () => {
+        const result = estimateFares('BIKE_TAXI',
             LOCATIONS.tNagar.lat, LOCATIONS.tNagar.lng,
             LOCATIONS.adyar.lat, LOCATIONS.adyar.lng,
             1.0
@@ -266,21 +272,20 @@ async function runAllTests() {
         assert(result.fares[0].tierId === 'auto_standard', 'Should be auto_standard');
     });
 
-    // FIX: Was 'BIKE_TAXI' — correct enum value is 'BIKE'
     await test('BIKE should be cheapest, then AUTO, then CAB economy', () => {
         const pickup = LOCATIONS.airport;
         const drop = LOCATIONS.central;
 
-        const bike = estimateFares('BIKE', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
+        const bike = estimateFares('BIKE_TAXI', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
         const auto = estimateFares('AUTO', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
-        const cab  = estimateFares('CAB',  pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
+        const cab = estimateFares('CAB', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
 
         const bikeFare = bike.fares[0].totalFare;
         const autoFare = auto.fares[0].totalFare;
-        const cabFare  = cab.fares[0].totalFare;
+        const cabFare = cab.fares[0].totalFare; // Economy
 
         assert(bikeFare < autoFare, `Bike (${bikeFare}) should be < Auto (${autoFare})`);
-        assert(autoFare < cabFare,  `Auto (${autoFare}) should be < Cab Economy (${cabFare})`);
+        assert(autoFare < cabFare, `Auto (${autoFare}) should be < Cab Economy (${cabFare})`);
     });
 
     await test('METRO mode returns metro fares (not regular fares)', () => {
@@ -296,16 +301,15 @@ async function runAllTests() {
         assert(result.metroFares![0].stationCount > 0, 'Station count should be > 0');
     });
 
-    // FIX: Was 'BIKE_TAXI' — correct enum value is 'BIKE'
     await test('METRO should be cheapest option overall', () => {
         const pickup = LOCATIONS.airport;
         const drop = LOCATIONS.central;
 
         const metro = estimateFares('METRO', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
-        const bike  = estimateFares('BIKE',  pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
+        const bike = estimateFares('BIKE_TAXI', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
 
         const metroFare = metro.metroFares![0].totalFare;
-        const bikeFare  = bike.fares[0].totalFare;
+        const bikeFare = bike.fares[0].totalFare;
 
         assert(metroFare < bikeFare, `Metro (${metroFare}) should be < Bike (${bikeFare})`);
     });
@@ -342,9 +346,8 @@ async function runAllTests() {
         assert(surge2 === 1.0, `Metro evening+airport should be 1.0, got ${surge2}`);
     });
 
-    // FIX: Was 'BIKE_TAXI' — correct enum value is 'BIKE'
     await test('BIKE surge should be capped at 1.3x', () => {
-        const surge = getSurgeMultiplier('BIKE', 18, true);
+        const surge = getSurgeMultiplier('BIKE_TAXI', 18, true); // Evening + airport = max scenario
         assert(surge <= 1.3, `Bike surge should be <= 1.3, got ${surge}`);
     });
 
@@ -355,7 +358,7 @@ async function runAllTests() {
 
     await test('Airport premium should add to surge', () => {
         const withoutAirport = getSurgeMultiplier('CAB', 14, false);
-        const withAirport    = getSurgeMultiplier('CAB', 14, true);
+        const withAirport = getSurgeMultiplier('CAB', 14, true);
         assert(withAirport > withoutAirport,
             `Airport (${withAirport}) should be > non-airport (${withoutAirport})`);
     });
@@ -391,18 +394,21 @@ async function runAllTests() {
     await test('Short metro ride (3km) should cost Rs.20-30', () => {
         const fares = calculateMetroFare(3);
         assert(fares.length > 0, 'Should return at least 1 line');
-        assertRange(fares[0].totalFareRupees, 10, 40, 'Short metro fare');
+        const fare = fares[0];
+        assertRange(fare.totalFareRupees, 10, 40, 'Short metro fare');
     });
 
     await test('Long metro ride (15km) should cost Rs.40-60', () => {
         const fares = calculateMetroFare(15);
-        assertRange(fares[0].totalFareRupees, 30, 60, 'Long metro fare');
+        const fare = fares[0];
+        assertRange(fare.totalFareRupees, 30, 60, 'Long metro fare');
     });
 
     await test('Metro fare should include station count', () => {
         const fares = calculateMetroFare(10);
-        assert(fares[0].stationCount > 0, 'Station count should be > 0');
-        assert(fares[0].estimatedDurationMin > 0, 'Duration should be > 0');
+        const fare = fares[0];
+        assert(fare.stationCount > 0, 'Station count should be > 0');
+        assert(fare.estimatedDurationMin > 0, 'Duration should be > 0');
     });
 
     await test('Metro should return Blue and Green line options', () => {
@@ -424,12 +430,15 @@ async function runAllTests() {
     });
 
     await test('Very long distance (50km) should produce high but valid fares', () => {
+        // Chennai to Mahabalipuram is about 50km
         const result = estimateFares('CAB', 13.08, 80.27, 12.62, 80.19, 1.0);
         assert(result.distanceKm > 40, `Distance should be > 40km, got ${result.distanceKm}`);
-        assertRange(result.fares[0].totalFareRupees, 400, 1500, 'Long distance economy fare');
+        const econFare = result.fares[0].totalFareRupees;
+        assertRange(econFare, 400, 1500, 'Long distance economy fare');
     });
 
     await test('Very short distance (0.2km) should enforce minimum fares', () => {
+        // Two points 200m apart
         const result = estimateFares('CAB', 13.0827, 80.2707, 13.0840, 80.2720, 1.0);
         assert(result.fares[0].minFareApplied === true, 'Min fare should apply');
         assert(result.fares[0].totalFare === 8000, `Economy min fare should be 8000, got ${result.fares[0].totalFare}`);
@@ -493,9 +502,8 @@ async function runAllTests() {
         console.log(`     Airport → T.Nagar: ₹${fare} (${result.distanceKm}km, ${result.estimatedDurationMin}min)`);
     });
 
-    // FIX: Was 'BIKE_TAXI' — correct enum value is 'BIKE'
     await test('Airport to T.Nagar bike: should be Rs.80-200', () => {
-        const result = estimateFares('BIKE',
+        const result = estimateFares('BIKE_TAXI',
             LOCATIONS.airport.lat, LOCATIONS.airport.lng,
             LOCATIONS.tNagar.lat, LOCATIONS.tNagar.lng,
             1.0
@@ -548,7 +556,7 @@ async function runAllTests() {
 
     const passed = results.filter(r => r.passed).length;
     const failed = results.filter(r => !r.passed).length;
-    const total  = results.length;
+    const total = results.length;
     const totalTime = results.reduce((sum, r) => sum + r.duration, 0);
 
     console.log(`║  Total:   ${String(total).padEnd(30)}║`);
