@@ -54,11 +54,10 @@ export interface MetroQuote {
     why: string;
 }
 
-export interface QuoteTag {
-    label: string;
-    color: string;
-    bg: string;
-}
+// Tag format: string enums matching frontend getToneClass/getTagLabel.
+// Frontend expects: 'BEST' | 'CHEAPEST' | 'PREMIUM'
+// quotes.controller.ts already uses this format.
+export type QuoteTag = 'BEST' | 'CHEAPEST' | 'PREMIUM';
 
 export interface QuotesResult {
     quotes: (RideQuote | MetroQuote)[];
@@ -282,35 +281,29 @@ function calculateMovzzScore(quote: {
 function assignTags(quotes: (RideQuote | MetroQuote)[]): void {
     if (quotes.length === 0) return;
 
-    // Sort by score descending (already done), tag first as Best Match
     let bestTagged = false;
     let cheapestTagged = false;
 
-    // Find cheapest
     const cheapestPrice = Math.min(...quotes.map(q => q.price));
 
     for (const quote of quotes) {
         if (!bestTagged) {
-            quote.tag = { label: 'Best Match', color: '#12B76A', bg: '#ECFDF3' };
+            quote.tag = 'BEST';
             bestTagged = true;
             continue;
         }
 
         if (!cheapestTagged && quote.price === cheapestPrice) {
-            quote.tag = { label: 'Cheapest', color: '#2D7FF9', bg: '#EBF3FF' };
+            quote.tag = 'CHEAPEST';
             cheapestTagged = true;
             continue;
         }
-
-        if (cheapestTagged && !quote.tag) {
-            // Other tags could go here
-        }
     }
 
-    // Tag the most expensive as "Premium" if not already tagged
+    // Tag the most expensive as Premium if not already tagged
     const mostExpensive = [...quotes].sort((a, b) => b.price - a.price)[0];
     if (mostExpensive && !mostExpensive.tag) {
-        mostExpensive.tag = { label: 'Premium', color: '#7C3AED', bg: '#F3E8FF' };
+        mostExpensive.tag = 'PREMIUM';
     }
 }
 

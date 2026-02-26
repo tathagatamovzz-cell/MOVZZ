@@ -146,7 +146,7 @@ async function runAllTests() {
     });
 
     await test('BIKE should be faster than CAB for same distance', () => {
-        const bikeDur = estimateDuration(15, 'BIKE_TAXI');
+        const bikeDur = estimateDuration(15, 'BIKE');
         const cabDur = estimateDuration(15, 'CAB');
         assert(bikeDur < cabDur, `Bike (${bikeDur}min) should be faster than cab (${cabDur}min)`);
     });
@@ -251,8 +251,8 @@ async function runAllTests() {
             'Comfort should be cheaper than premium');
     });
 
-    await test('BIKE_TAXI mode returns 1 tier', () => {
-        const result = estimateFares('BIKE_TAXI',
+    await test('BIKE mode returns 1 tier', () => {
+        const result = estimateFares('BIKE',
             LOCATIONS.tNagar.lat, LOCATIONS.tNagar.lng,
             LOCATIONS.adyar.lat, LOCATIONS.adyar.lng,
             1.0
@@ -276,7 +276,7 @@ async function runAllTests() {
         const pickup = LOCATIONS.airport;
         const drop = LOCATIONS.central;
 
-        const bike = estimateFares('BIKE_TAXI', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
+        const bike = estimateFares('BIKE', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
         const auto = estimateFares('AUTO', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
         const cab = estimateFares('CAB', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
 
@@ -306,7 +306,7 @@ async function runAllTests() {
         const drop = LOCATIONS.central;
 
         const metro = estimateFares('METRO', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
-        const bike = estimateFares('BIKE_TAXI', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
+        const bike = estimateFares('BIKE', pickup.lat, pickup.lng, drop.lat, drop.lng, 1.0);
 
         const metroFare = metro.metroFares![0].totalFare;
         const bikeFare = bike.fares[0].totalFare;
@@ -347,7 +347,7 @@ async function runAllTests() {
     });
 
     await test('BIKE surge should be capped at 1.3x', () => {
-        const surge = getSurgeMultiplier('BIKE_TAXI', 18, true); // Evening + airport = max scenario
+        const surge = getSurgeMultiplier('BIKE', 18, true); // Evening + airport = max scenario
         assert(surge <= 1.3, `Bike surge should be <= 1.3, got ${surge}`);
     });
 
@@ -503,7 +503,7 @@ async function runAllTests() {
     });
 
     await test('Airport to T.Nagar bike: should be Rs.80-200', () => {
-        const result = estimateFares('BIKE_TAXI',
+        const result = estimateFares('BIKE',
             LOCATIONS.airport.lat, LOCATIONS.airport.lng,
             LOCATIONS.tNagar.lat, LOCATIONS.tNagar.lng,
             1.0

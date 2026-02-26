@@ -10,7 +10,7 @@
  *
  *  Supported modes:
  *    CAB        — Economy / Comfort / Premium tiers
- *    BIKE_TAXI  — Single tier
+ *    BIKE  — Single tier
  *    AUTO       — Single tier
  *    METRO      — Station-based flat fare tiers
  *
@@ -22,7 +22,7 @@
 
 // ─── Types ──────────────────────────────────────────────
 
-export type TransportMode = 'CAB' | 'BIKE_TAXI' | 'AUTO' | 'METRO';
+export type TransportMode = 'CAB' | 'BIKE' | 'AUTO' | 'METRO';
 
 export interface FareConfig {
     baseFarePaise: number;      // Fixed base charge
@@ -56,23 +56,30 @@ export interface FareBreakdown {
     minFareApplied: boolean;    // Whether the floor fare kicked in
 }
 
-export interface MetroFareBreakdown {
-    tierId: string;
-    tierName: string;
-    tierDescription: string;
-    line: string;
-    stationCount: number;
-    totalFare: number;          // In paise
-    totalFareRupees: number;
-    estimatedDurationMin: number;
-}
+// Metro types and logic live in metro.service.ts (extracted per Phase 1D).
+// Re-exported here so existing callers (quotes.controller, tests) don't
+// need to update their imports.
+export {
+    MetroFareBreakdown, MetroLine,
+    calculateMetroFare, cheapestMetroFare,
+    CHENNAI_METRO_LINES, METRO_FARE_SLABS,
+} from './metro.service';
+
+// Import for local use within this file (estimateFares, _testExports)
+import {
+    calculateMetroFare as _calcMetro,
+    cheapestMetroFare as _cheapestMetro,
+    CHENNAI_METRO_LINES as _METRO_LINES,
+    METRO_FARE_SLABS as _METRO_SLABS,
+} from './metro.service';
+import type { MetroFareBreakdown as _MetroFareBreakdown } from './metro.service';
 
 export interface FareEstimateResult {
     transportMode: TransportMode;
     distanceKm: number;
     estimatedDurationMin: number;
     fares: FareBreakdown[];             // For CAB/BIKE/AUTO
-    metroFares?: MetroFareBreakdown[];  // For METRO only
+    metroFares?: _MetroFareBreakdown[];  // For METRO only
     calculatedAt: string;               // ISO timestamp
 }
 
@@ -83,7 +90,7 @@ export interface FareEstimateResult {
  * Based on market rates from Uber, Ola, Rapido in Chennai (2025-2026).
  *
  * CAB has 3 tiers to give users Best/Cheapest/Premium options.
- * BIKE_TAXI and AUTO are single-tier since the market doesn't
+ * BIKE and AUTO are single-tier since the market doesn't
  * differentiate much within these modes.
  */
 const CAB_TIERS: FareTier[] = [
@@ -125,7 +132,7 @@ const CAB_TIERS: FareTier[] = [
     },
 ];
 
-const BIKE_TAXI_TIERS: FareTier[] = [
+const BIKE_TIERS: FareTier[] = [
     {
         tierId: 'bike_standard',
         tierName: 'Bike Taxi',
@@ -155,64 +162,8 @@ const AUTO_TIERS: FareTier[] = [
     },
 ];
 
-/**
- * Chennai Metro fare slabs (2025-2026).
- * Based on CMRL (Chennai Metro Rail Limited) published fares.
- * Flat-rate tiers by station count.
- */
-const METRO_FARE_SLABS: { maxStations: number; farePaise: number }[] = [
-    { maxStations: 2,  farePaise: 1000 },   // ₹10
-    { maxStations: 5,  farePaise: 2000 },   // ₹20
-    { maxStations: 10, farePaise: 3000 },   // ₹30
-    { maxStations: 15, farePaise: 4000 },   // ₹40
-    { maxStations: 25, farePaise: 5000 },   // ₹50
-    { maxStations: 999, farePaise: 6000 },  // ₹60 (anything beyond 25)
-];
-
-/**
- * Chennai Metro lines.
- * Used for estimating station count and selecting the right line.
- */
-export interface MetroLine {
-    lineId: string;
-    name: string;
-    color: string;
-    stations: string[];
-    avgInterStationMin: number;     // Average time between stations
-}
-
-const CHENNAI_METRO_LINES: MetroLine[] = [
-    {
-        lineId: 'blue',
-        name: 'Blue Line',
-        color: '#1565C0',
-        avgInterStationMin: 2.5,
-        stations: [
-            'Wimco Nagar', 'Wimco Nagar Depot', 'Tiruvottiyur',
-            'Tiruvottiyur Theradi', 'Washermanpet', 'Sir Theagaraya College',
-            'Tondiarpet', 'New Washermanpet', 'Government Estate',
-            'High Court', 'Mannadi', 'Chennai Central', 'Egmore',
-            'Nehru Park', 'Kilpauk', 'Pachaiyappas College',
-            'Shenoy Nagar', 'Anna Nagar East', 'Anna Nagar Tower',
-            'Thirumangalam', 'Koyambedu', 'CMBT', 'Arumbakkam',
-            'Vadapalani', 'Ashok Nagar', 'Ekkattuthangal',
-            'Alandur', 'Nanganallur Road', 'Meenambakkam',
-            'Chennai Airport',
-        ],
-    },
-    {
-        lineId: 'green',
-        name: 'Green Line',
-        color: '#2E7D32',
-        avgInterStationMin: 2.3,
-        stations: [
-            'Central', 'Government Estate', 'Thousand Lights',
-            'AG-DMS', 'Teynampet', 'Nandanam', 'Saidapet',
-            'Little Mount', 'Guindy', 'Alandur',
-            'Nanganallur Road', 'St. Thomas Mount',
-        ],
-    },
-];
+// Metro fare slabs and line data now live in metro.service.ts.
+// Imported above as _METRO_SLABS, _METRO_LINES for local use.
 
 // ─── Distance Calculation ───────────────────────────────
 
@@ -260,7 +211,7 @@ function toRad(deg: number): number {
  */
 const AVG_SPEEDS_KMPH: Record<TransportMode, number> = {
     CAB: 22,            // Chennai urban average with traffic
-    BIKE_TAXI: 28,      // Bikes weave through traffic faster
+    BIKE: 28,      // Bikes weave through traffic faster
     AUTO: 20,           // Autos are slower in congestion
     METRO: 35,          // Metro is fastest but includes walking time
 };
@@ -323,47 +274,8 @@ export function calculateTierFare(
     };
 }
 
-// ─── Metro Fare Calculator ──────────────────────────────
-
-/**
- * Estimate metro fare based on approximate station count.
- * Uses straight-line distance to estimate how many stations
- * the journey spans, then looks up the fare slab.
- */
-export function calculateMetroFare(
-    distanceKm: number
-): MetroFareBreakdown[] {
-    // Average inter-station distance in Chennai Metro is ~1.2 km
-    const AVG_STATION_GAP_KM = 1.2;
-    const estimatedStations = Math.max(1, Math.round(distanceKm / AVG_STATION_GAP_KM));
-
-    const results: MetroFareBreakdown[] = [];
-
-    for (const line of CHENNAI_METRO_LINES) {
-        // Only include line if it could plausibly serve this distance
-        const maxLineStations = line.stations.length;
-        const stationCount = Math.min(estimatedStations, maxLineStations);
-
-        // Look up fare slab
-        const slab = METRO_FARE_SLABS.find(s => stationCount <= s.maxStations);
-        if (!slab) continue;
-
-        const durationMin = Math.round(stationCount * line.avgInterStationMin) + 5; // +5 min for walking/waiting
-
-        results.push({
-            tierId: `metro_${line.lineId}`,
-            tierName: line.name,
-            tierDescription: `${stationCount} stations, ${line.color === '#1565C0' ? 'Airport to Wimco Nagar' : 'St. Thomas Mount to Central'}`,
-            line: line.name,
-            stationCount,
-            totalFare: slab.farePaise,
-            totalFareRupees: slab.farePaise / 100,
-            estimatedDurationMin: durationMin,
-        });
-    }
-
-    return results;
-}
+// Metro fare calculation now lives in metro.service.ts.
+// calculateMetroFare is re-exported above and imported as _calcMetro for local use.
 
 // ─── Surge Pricing Engine ───────────────────────────────
 
@@ -406,7 +318,7 @@ export function getSurgeMultiplier(
     }
 
     // Bikes and autos have lower surge caps
-    if (mode === 'BIKE_TAXI') {
+    if (mode === 'BIKE') {
         surge = Math.min(surge, 1.3);  // Cap at 1.3x
     } else if (mode === 'AUTO') {
         surge = Math.min(surge, 1.4);  // Cap at 1.4x
@@ -442,7 +354,7 @@ export function isNearAirport(lat?: number, lng?: number): boolean {
  * fare tiers with full breakdowns.
  *
  * For CAB: returns 3 tiers (Economy, Comfort, Premium)
- * For BIKE_TAXI: returns 1 tier
+ * For BIKE: returns 1 tier
  * For AUTO: returns 1 tier
  * For METRO: returns metro-specific fare breakdowns per line
  *
@@ -484,8 +396,8 @@ export function estimateFares(
         case 'CAB':
             tiers = CAB_TIERS;
             break;
-        case 'BIKE_TAXI':
-            tiers = BIKE_TAXI_TIERS;
+        case 'BIKE':
+            tiers = BIKE_TIERS;
             break;
         case 'AUTO':
             tiers = AUTO_TIERS;
@@ -497,7 +409,7 @@ export function estimateFares(
                 distanceKm,
                 estimatedDurationMin: durationMin,
                 fares: [],
-                metroFares: calculateMetroFare(distanceKm),
+                metroFares: _calcMetro(distanceKm),
                 calculatedAt: new Date().toISOString(),
             };
         default:
@@ -553,10 +465,10 @@ export function estimateSingleFare(
 
 export const _testExports = {
     CAB_TIERS,
-    BIKE_TAXI_TIERS,
+    BIKE_TIERS,
     AUTO_TIERS,
-    METRO_FARE_SLABS,
-    CHENNAI_METRO_LINES,
+    METRO_FARE_SLABS: _METRO_SLABS,
+    CHENNAI_METRO_LINES: _METRO_LINES,
     ROAD_FACTOR,
     AVG_SPEEDS_KMPH,
 };
