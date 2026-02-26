@@ -1,11 +1,24 @@
 /**
  * ═══════════════════════════════════════════════════════════
- *  RIDE ROUTES — Search, select, and book rides
+ *  RIDE ROUTES — DEPRECATED
+ * ═══════════════════════════════════════════════════════════
+ *
+ *  These routes previously handled ride search and selection
+ *  via ride.controller.ts, which contained a parallel quote
+ *  system with hardcoded provider simulation.
+ *
+ *  All functionality has moved to:
+ *    POST /api/v1/quotes    → quotes.controller.ts
+ *    POST /api/v1/bookings  → booking.controller.ts
+ *
+ *  The routes below are kept as thin 410 shims so existing
+ *  clients get a clear migration message instead of a 404.
+ *  Once all clients have migrated, this file and
+ *  ride.controller.ts can be deleted.
  * ═══════════════════════════════════════════════════════════
  */
 
 import { Router } from 'express';
-import { authenticateUser } from '../middleware/auth.middleware';
 import {
     searchRidesHandler,
     selectEstimateHandler,
@@ -13,31 +26,8 @@ import {
 
 const router = Router();
 
-// Ride search doesn't require auth (but uses it if available)
-router.post('/search', optionalAuth, searchRidesHandler);
-
-// Selecting an estimate and booking requires auth
-router.post('/select', authenticateUser, selectEstimateHandler);
-
-// ─── Optional Auth Middleware ───────────────────────────
-// Attaches user if token present, but doesn't reject if missing
-function optionalAuth(req: any, res: any, next: any) {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return next();
-    }
-
-    try {
-        const { verifyToken } = require('../services/jwt.service');
-        const token = authHeader.substring(7);
-        const payload = verifyToken(token);
-        req.user = { userId: payload.userId, phone: payload.phone };
-    } catch {
-        // Invalid token, continue without user
-    }
-
-    next();
-}
+// Both handlers return 410 Gone with replacement endpoint info
+router.post('/search', searchRidesHandler);
+router.post('/select', selectEstimateHandler);
 
 export default router;

@@ -18,6 +18,7 @@ import prisma from '../config/database';
 import { findBestProvider, ScoredProvider } from './provider-scoring.service';
 import { attemptRecovery, issueCompensation } from './recovery.service';
 import redis from '../config/redis';
+import { estimateSingleFare } from './fare.service';
 
 // ─── Valid State Transitions ────────────────────────────
 
@@ -32,31 +33,28 @@ const VALID_TRANSITIONS: Record<BookingState, BookingState[]> = {
 };
 
 // ─── Fare Estimation ────────────────────────────────────
-// NOTE: This is the fallback fare estimator used when no quoteId is provided.
-// When a quoteId is present the fare from the cached quote is used instead,
-// which comes from fare.service.ts and includes mode-specific rates, surge
-// pricing, and airport detection. This function is intentionally simple —
-// do not add mode logic here; that belongs in fare.service.ts.
+// Delegates to fare.service.ts estimateSingleFare() which uses
+// mode-specific rates, surge pricing, road factor correction,
+// and airport detection. Falls back to CAB mode when no
+// transportMode is available (e.g. legacy bookings without mode).
+//
+// When a quoteId is present, the fare from the cached quote is
+// used instead (see createBooking below), bypassing this entirely.
 
 function estimateFare(
     pickupLat?: number | null,
     pickupLng?: number | null,
     dropoffLat?: number | null,
-    dropoffLng?: number | null
+    dropoffLng?: number | null,
+    transportMode?: string,
 ): number {
-    if (pickupLat && pickupLng && dropoffLat && dropoffLng) {
-        const R = 6371;
-        const dLat = (dropoffLat - pickupLat) * Math.PI / 180;
-        const dLng = (dropoffLng - pickupLng) * Math.PI / 180;
-        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(pickupLat * Math.PI / 180) * Math.cos(dropoffLat * Math.PI / 180) *
-            Math.sin(dLng / 2) * Math.sin(dLng / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        const distanceKm = R * c;
-        const fareRupees = Math.max(50, Math.round(distanceKm * 12));
-        return fareRupees * 100;
-    }
-    return 15000; // ₹150 in paise
+    return estimateSingleFare(
+        (transportMode as 'CAB' | 'BIKE' | 'AUTO' | 'METRO') || 'CAB',
+        pickupLat ?? undefined,
+        pickupLng ?? undefined,
+        dropoffLat ?? undefined,
+        dropoffLng ?? undefined,
+    );
 }
 
 // ─── Create Booking ─────────────────────────────────────
@@ -87,7 +85,8 @@ export async function createBooking(params: {
     // re-run assignProvider as before.
     let resolvedFare = params.fareEstimate ?? estimateFare(
         params.pickupLat, params.pickupLng,
-        params.dropoffLat, params.dropoffLng
+        params.dropoffLat, params.dropoffLng,
+        params.transportMode,
     );
     let cachedProviderId: string | null = null;
 
@@ -211,7 +210,7 @@ async function assignCachedProvider(bookingId: string, providerId: string) {
     if (!booking || booking.state !== 'SEARCHING') return;
 
     const provider = await prisma.provider.findUnique({ where: { id: providerId } });
-    if (!provider || !provider.isActive) {
+    if (!provider || !provider.active) {
         // Provider went offline between quote and booking — fall back to scoring
         console.warn(`[Booking] Cached provider ${providerId} unavailable, falling back to scoring`);
         await assignProvider(bookingId, (booking.tripType as 'HIGH_RELIABILITY' | 'STANDARD'));
