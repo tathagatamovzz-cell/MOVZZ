@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useJsApiLoader, Autocomplete } from '@react-google-maps/api';
+import Map, { Marker } from 'react-map-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import { useBookingStore } from './stores/bookingStore';
 import { useAuthStore } from './stores/authStore';
 
-// Must be a stable reference — defined outside component to avoid re-renders
-const MAPS_LIBRARIES = ['places'];
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+const CHENNAI_PROXIMITY = '80.2707,13.0827';
 
 const transportModes = [
   { id: "cab", label: "Cab", icon: CabIcon, desc: "Doorstep comfort and AC ride" },
@@ -60,14 +61,12 @@ function App() {
   // FIX 2: useRef calls moved inside the component where hooks belong.
   // Previously declared at module scope, which violates the Rules of Hooks
   // and throws in strict mode.
-  const isProcessing = useRef(false);
-  const pickupACRef = useRef(null);
-  const dropoffACRef = useRef(null);
+  const [sourceSuggestions, setSourceSuggestions] = useState([]);
+  const [destSuggestions, setDestSuggestions] = useState([]);
+  const [mapViewState, setMapViewState] = useState({ longitude: 80.2707, latitude: 13.0827, zoom: 11 });
 
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
-    libraries: MAPS_LIBRARIES,
-  });
+  const isProcessing = useRef(false);
+  const suggestDebounce = useRef(null);
 
   const { otpSent, phone, isAuthenticated, isLoading: isAuthLoading, error: authError, sendOTP, verifyOTP, loginWithOAuthToken } = useAuthStore();
   const { quotes, isLoading, error, fetchQuotes, createBooking, currentBooking, connectSocket, disconnectSocket } = useBookingStore();
@@ -118,20 +117,55 @@ function App() {
     setScreen(next);
   }
 
-  function onPickupPlaceChanged() {
-    const place = pickupACRef.current?.getPlace();
-    if (place?.geometry?.location) {
-      setSource(place.formatted_address || place.name || source);
-      setSourceCoords({ lat: place.geometry.location.lat(), lng: place.geometry.location.lng() });
+  async function fetchSuggestions(query) {
+    if (!query || query.length < 3 || !MAPBOX_TOKEN) return [];
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?country=IN&proximity=${CHENNAI_PROXIMITY}&types=place,neighborhood,address,poi&limit=5&access_token=${MAPBOX_TOKEN}`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      return (data.features || []).map(f => ({
+        placeName: f.place_name,
+        lat: f.center[1],
+        lng: f.center[0],
+      }));
+    } catch {
+      return [];
     }
   }
 
-  function onDropoffPlaceChanged() {
-    const place = dropoffACRef.current?.getPlace();
-    if (place?.geometry?.location) {
-      setDestination(place.formatted_address || place.name || destination);
-      setDestCoords({ lat: place.geometry.location.lat(), lng: place.geometry.location.lng() });
+  // Auto-pan map when coords change
+  useEffect(() => {
+    if (sourceCoords && destCoords) {
+      setMapViewState({
+        longitude: (sourceCoords.lng + destCoords.lng) / 2,
+        latitude: (sourceCoords.lat + destCoords.lat) / 2,
+        zoom: 11,
+      });
+    } else if (destCoords) {
+      setMapViewState({ longitude: destCoords.lng, latitude: destCoords.lat, zoom: 13 });
+    } else if (sourceCoords) {
+      setMapViewState({ longitude: sourceCoords.lng, latitude: sourceCoords.lat, zoom: 13 });
     }
+  }, [sourceCoords, destCoords]);
+
+  function handleSourceChange(val) {
+    setSource(val);
+    setSourceCoords(null);
+    clearTimeout(suggestDebounce.current);
+    suggestDebounce.current = setTimeout(async () => {
+      const results = await fetchSuggestions(val);
+      setSourceSuggestions(results);
+    }, 300);
+  }
+
+  function handleDestChange(val) {
+    setDestination(val);
+    setDestCoords(null);
+    clearTimeout(suggestDebounce.current);
+    suggestDebounce.current = setTimeout(async () => {
+      const results = await fetchSuggestions(val);
+      setDestSuggestions(results);
+    }, 300);
   }
 
   async function findRides() {
@@ -356,53 +390,88 @@ function App() {
             <div className="route-fields">
               <label className="field compact">
                 <span>Pickup</span>
-                {isLoaded ? (
-                  <Autocomplete
-                    onLoad={(ac) => { pickupACRef.current = ac; }}
-                    onPlaceChanged={onPickupPlaceChanged}
-                    options={{ componentRestrictions: { country: 'in' } }}
-                  >
-                    <input
-                      type="text"
-                      value={source}
-                      onChange={(e) => { setSource(e.target.value); setSourceCoords(null); }}
-                      placeholder="Current location"
-                    />
-                  </Autocomplete>
-                ) : (
+                <div style={{ position: 'relative' }}>
                   <input
                     type="text"
                     value={source}
-                    onChange={(e) => setSource(e.target.value)}
+                    onChange={(e) => handleSourceChange(e.target.value)}
                     placeholder="Current location"
                   />
-                )}
+                  {sourceSuggestions.length > 0 && (
+                    <ul style={{
+                      position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999,
+                      background: '#fff', border: '1px solid #ddd', borderRadius: '6px',
+                      margin: '2px 0 0', padding: 0, listStyle: 'none',
+                      maxHeight: '180px', overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    }}>
+                      {sourceSuggestions.map((s, i) => (
+                        <li
+                          key={i}
+                          style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid #f0f0f0' }}
+                          onMouseDown={() => {
+                            setSource(s.placeName);
+                            setSourceCoords({ lat: s.lat, lng: s.lng });
+                            setSourceSuggestions([]);
+                          }}
+                        >
+                          {s.placeName}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </label>
               <label className="field compact">
                 <span>Drop location</span>
-                {isLoaded ? (
-                  <Autocomplete
-                    onLoad={(ac) => { dropoffACRef.current = ac; }}
-                    onPlaceChanged={onDropoffPlaceChanged}
-                    options={{ componentRestrictions: { country: 'in' } }}
-                  >
-                    <input
-                      type="text"
-                      value={destination}
-                      onChange={(e) => { setDestination(e.target.value); setDestCoords(null); }}
-                      placeholder="Terminal 1, Chennai Airport"
-                    />
-                  </Autocomplete>
-                ) : (
+                <div style={{ position: 'relative' }}>
                   <input
                     type="text"
                     value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
+                    onChange={(e) => handleDestChange(e.target.value)}
                     placeholder="Terminal 1, Chennai Airport"
                   />
-                )}
+                  {destSuggestions.length > 0 && (
+                    <ul style={{
+                      position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999,
+                      background: '#fff', border: '1px solid #ddd', borderRadius: '6px',
+                      margin: '2px 0 0', padding: 0, listStyle: 'none',
+                      maxHeight: '180px', overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    }}>
+                      {destSuggestions.map((s, i) => (
+                        <li
+                          key={i}
+                          style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid #f0f0f0' }}
+                          onMouseDown={() => {
+                            setDestination(s.placeName);
+                            setDestCoords({ lat: s.lat, lng: s.lng });
+                            setDestSuggestions([]);
+                          }}
+                        >
+                          {s.placeName}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </label>
             </div>
+          </div>
+
+          <div style={{ borderRadius: '10px', overflow: 'hidden', margin: '12px 0', height: '180px' }}>
+            <Map
+              mapboxAccessToken={MAPBOX_TOKEN}
+              {...mapViewState}
+              onMove={(evt) => setMapViewState(evt.viewState)}
+              mapStyle="mapbox://styles/mapbox/streets-v12"
+              style={{ width: '100%', height: '100%' }}
+            >
+              {sourceCoords && (
+                <Marker longitude={sourceCoords.lng} latitude={sourceCoords.lat} color="#22c55e" />
+              )}
+              {destCoords && (
+                <Marker longitude={destCoords.lng} latitude={destCoords.lat} color="#f97316" />
+              )}
+            </Map>
           </div>
 
           <div className="chips">

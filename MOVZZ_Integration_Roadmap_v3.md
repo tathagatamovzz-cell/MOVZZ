@@ -2,20 +2,20 @@
 ## Frontend ↔ Backend Integration Roadmap
 **Version 3.0**
 February 28, 2026
-*Updated after Phase 4 Session*
+*Updated after Phase 4 Completion*
 
 ---
 
 ## Progress Overview
 
-14 of 15 roadmap tasks are complete. WebSockets and Google OAuth are fully functional. Google Maps integration code is implemented (Places Autocomplete, Distance Matrix) but blocked on Google Cloud API activation — the Maps JavaScript API and Places API must be enabled in GCP Library and billing must be attached before the autocomplete dropdown becomes functional.
+All 15 roadmap tasks are complete. Phase 4 production hardening is fully functional — real-time booking updates via Socket.IO, Google OAuth social login, and location autocomplete + map via Mapbox (replaced Google Maps due to GCP billing requirement).
 
 | Phase | Tasks | Completed | Status |
 |---|---|---|---|
 | Phase 1: Backend | 5 tasks | 5/5 | ✅ Complete |
 | Phase 2: Frontend API | 4 tasks | 4/4 | ✅ Complete |
 | Phase 3: Screen Wiring | 3 tasks | 3/3 | ✅ Complete |
-| Phase 4: Production | 3 tasks | **2/3** | 🟡 **In Progress** |
+| Phase 4: Production | 3 tasks | **3/3** | ✅ **Complete** |
 
 ---
 
@@ -60,7 +60,7 @@ February 28, 2026
 |---|---|---|---|---|---|
 | 13 | WebSockets / Socket.IO for live updates | Both | 6 hrs | ✅ DONE | Replaced 5-second HTTP polling with server-push events. Per-user rooms via socket.join(userId). JWT auth on handshake. |
 | 14 | Google OAuth | Backend | 8 hrs | ✅ DONE | Direct REST flow, no Passport.js. "Continue with Google" alongside OTP. Users stored as phone = "oauth_google_\<sub\>". |
-| 15 | Google Maps integration | Frontend | 6 hrs | 🟡 IN PROGRESS | Code complete. Blocked on GCP — Maps JavaScript API + Places API must be enabled in Library and billing must be activated. "This page can't load Google Maps correctly" error until resolved. |
+| 15 | Maps integration | Frontend | 6 hrs | ✅ DONE | Switched from Google Maps to Mapbox (no billing required). Geocoding autocomplete via Mapbox REST API. Interactive map with green/orange markers. `react-map-gl` + `mapbox-gl`. |
 
 ---
 
@@ -166,7 +166,7 @@ Direct REST implementation using Node 22 native `fetch`. id_token decoded by bas
 | Google OAuth | Functional — "Continue with Google" tested end-to-end |
 | Quote-to-booking | Functional — coordinates wired, falls back to Haversine when Maps unavailable |
 | Booking state updates | Real-time via Socket.IO — polling removed |
-| Places Autocomplete | 🟡 Blocked — code complete, awaiting GCP API enablement + billing |
+| Places Autocomplete + Map | Functional — Mapbox geocoding + react-map-gl interactive map |
 | API response consistency | All controllers use `{ success, data }` pattern |
 
 ---
@@ -182,4 +182,4 @@ Direct REST implementation using Node 22 native `fetch`. id_token decoded by bas
 
 
 
-*MOVZZ | Integration Roadmap v3.0 | Feb 28, 2026 | **14/15 tasks complete — Task #15 blocked on GCP***
+*MOVZZ | Integration Roadmap v3.0 | Feb 28, 2026 | **15/15 tasks complete***
