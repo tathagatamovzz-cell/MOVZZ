@@ -20,6 +20,7 @@ import redis from '../config/redis';
 import { estimateSingleFare } from './fare.service';
 import { getIo } from '../config/socket';
 import { bookingTimeoutQueue, recoveryQueue } from '../config/queues';
+import { sendBookingConfirmation, sendBookingCancellation } from './email.service';
 
 // ─── Valid State Transitions ────────────────────────────
 
@@ -365,13 +366,16 @@ export async function transitionState(
     // Push state change to the client via Socket.IO (no-op if socket not initialised)
     const io = getIo();
     if (io) {
-        io.to(booking.userId).emit('booking:state_changed', {
+        const payload = {
             id: bookingId,
             state: newState,
             previousState: booking.state,
             metadata: metadata || booking.metadata,
             updatedAt: new Date().toISOString(),
-        });
+        };
+        io.to(booking.userId).emit('booking:state_changed', payload);
+        // Also push to admin room so the Admin Panel can react instantly
+        io.to('admin').emit('booking:state_changed', payload);
     }
 
     await logBookingEvent(
@@ -384,6 +388,39 @@ export async function transitionState(
         await updateProviderMetrics(booking.providerId, true);
     } else if (newState === 'FAILED' && booking.providerId) {
         await updateProviderMetrics(booking.providerId, false);
+    }
+
+    // Transactional emails — fire-and-forget (never block state transition)
+    if (newState === 'CONFIRMED' || newState === 'CANCELLED') {
+        const user = await prisma.user.findUnique({
+            where: { id: booking.userId },
+            select: { email: true, name: true },
+        });
+        if (user?.email) {
+            if (newState === 'CONFIRMED') {
+                const provider = booking.providerId
+                    ? await prisma.provider.findUnique({ where: { id: booking.providerId }, select: { name: true } })
+                    : null;
+                sendBookingConfirmation({
+                    toEmail: user.email,
+                    userName: user.name || '',
+                    bookingId,
+                    pickup: booking.pickup,
+                    dropoff: booking.dropoff,
+                    providerName: provider?.name || 'Assigned driver',
+                    transportMode: booking.transportMode,
+                    fareRupees: Math.round(booking.fareEstimate / 100),
+                }).catch(err => console.error('[Email] Confirmation failed:', err));
+            } else {
+                sendBookingCancellation({
+                    toEmail: user.email,
+                    userName: user.name || '',
+                    bookingId,
+                    pickup: booking.pickup,
+                    dropoff: booking.dropoff,
+                }).catch(err => console.error('[Email] Cancellation failed:', err));
+            }
+        }
     }
 
     return true;

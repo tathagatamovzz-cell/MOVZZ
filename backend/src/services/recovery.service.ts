@@ -13,6 +13,7 @@
 
 import prisma from '../config/database';
 import { findBestProvider } from './provider-scoring.service';
+import { sendCompensationCredit } from './email.service';
 
 const MAX_RETRY_ATTEMPTS = 3;
 const COMPENSATION_AMOUNT = 10000; // ₹100 in paise
@@ -264,6 +265,21 @@ export async function issueCompensation(
     });
 
     console.log(`💰 ₹${COMPENSATION_AMOUNT / 100} credit issued to user ${userId} for booking ${bookingId}`);
+
+    // Send compensation email — fire-and-forget
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, name: true },
+    });
+    if (user?.email) {
+        sendCompensationCredit({
+            toEmail: user.email,
+            userName: user.name || '',
+            bookingId,
+            amountRupees: COMPENSATION_AMOUNT / 100,
+            expiryDays: COMPENSATION_EXPIRY_DAYS,
+        }).catch(err => console.error('[Email] Compensation email failed:', err));
+    }
 }
 
 // ─── Check User Credits ─────────────────────────────────

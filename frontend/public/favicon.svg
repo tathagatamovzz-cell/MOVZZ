@@ -1,0 +1,9 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'>
+  <rect width='64' height='64' rx='12.8' fill='#0d1d35'/>
+  <text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle'
+    font-family='Arial Black,Arial,sans-serif' font-weight='900'
+    font-size='17.92' fill='#ffffff' letter-spacing='-1'>MOV</text>
+  <text x='50%' y='80%' dominant-baseline='middle' text-anchor='middle'
+    font-family='Arial Black,Arial,sans-serif' font-weight='900'
+    font-size='17.92' fill='#60a5fa' letter-spacing='-1'>ZZ</text>
+</svg>

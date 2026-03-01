@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -7,15 +8,27 @@ import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 
-
-// Load environment variables
+// Load environment variables first so SENTRY_DSN is available
 dotenv.config();
+
+// ─── Sentry ──────────────────────────────────────────────
+// Initialised before any route/middleware so all errors are captured.
+// No-op when SENTRY_DSN is not set (local dev without an account).
+if (process.env.SENTRY_DSN) {
+    Sentry.init({
+        dsn: process.env.SENTRY_DSN,
+        environment: process.env.NODE_ENV || 'development',
+        tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
+    });
+    console.log('[Sentry] Error monitoring enabled');
+}
 
 import authRoutes from './routes/auth.routes';
 import bookingRoutes from './routes/booking.routes';
 import adminRoutes from './routes/admin.routes';
 import rideRoutes from './routes/ride.routes';
 import quotesRoutes from './routes/quotes.routes';
+import uploadRoutes from './routes/upload.routes';
 import prisma from './config/database';
 import { setIo } from './config/socket';
 import { verifyToken } from './services/jwt.service';
@@ -90,6 +103,7 @@ app.use('/api/v1/bookings', bookingRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/rides', rideRoutes);
 app.use('/api/v1/quotes', quotesRoutes);
+app.use('/api/v1/upload', uploadRoutes);
 
 // ─── 404 Handler ────────────────────────────────────────
 
@@ -99,6 +113,13 @@ app.use((_req, res) => {
         error: 'Route not found',
     });
 });
+
+// ─── Sentry Error Handler ────────────────────────────────
+// Must be registered before the generic error handler so Sentry
+// captures the error before the response is sent.
+if (process.env.SENTRY_DSN) {
+    Sentry.setupExpressErrorHandler(app);
+}
 
 // ─── Global Error Handler ───────────────────────────────
 
@@ -139,6 +160,8 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
     const userId: string = socket.data.userId;
     socket.join(userId);
+    // Admin panel joins the shared 'admin' room to receive all booking events
+    socket.on('join:admin', () => socket.join('admin'));
     socket.on('disconnect', () => {
         socket.leave(userId);
     });

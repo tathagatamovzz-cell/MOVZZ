@@ -70,6 +70,51 @@ function App() {
   const { otpSent, phone, isAuthenticated, isLoading: isAuthLoading, error: authError, sendOTP, verifyOTP, loginWithOAuthToken } = useAuthStore();
   const { quotes, isLoading, error, fetchQuotes, createBooking, currentBooking, connectSocket, disconnectSocket } = useBookingStore();
 
+  // ── Profile photo ────────────────────────────────────────
+  const [photoUrl, setPhotoUrl] = useState(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const photoInputRef = useRef(null);
+  const API_BASE = 'http://localhost:3000/api/v1';
+
+  // Load photo on auth
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const token = localStorage.getItem('movzz_token');
+    fetch(`${API_BASE}/upload/users/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (d.success && d.data.photoUrl) setPhotoUrl(d.data.photoUrl); })
+      .catch(() => {});
+  }, [isAuthenticated]);
+
+  async function handleAvatarUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoUploading(true);
+    try {
+      const token = localStorage.getItem('movzz_token');
+      // 1. Get presigned URL
+      const presignRes = await fetch(`${API_BASE}/upload/presign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ purpose: 'profile', contentType: file.type }),
+      }).then(r => r.json());
+      if (!presignRes.success) throw new Error(presignRes.error);
+      // 2. Upload directly to S3
+      await fetch(presignRes.data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      // 3. Save key
+      const saveRes = await fetch(`${API_BASE}/upload/users/me/photo`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ key: presignRes.data.key }),
+      }).then(r => r.json());
+      if (saveRes.success) setPhotoUrl(saveRes.data.photoUrl);
+    } catch (err) {
+      console.error('Photo upload failed:', err);
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
   useEffect(() => {
     if (quotes && quotes.length > 0) {
       setSelectedRide(quotes[0]);
@@ -217,7 +262,35 @@ function App() {
         <header className="status-row">
           <span>9:41</span>
           <span>MOVZZ</span>
-          <span>5G</span>
+          {isAuthenticated ? (
+            <button
+              onClick={() => photoInputRef.current?.click()}
+              title={photoUploading ? 'Uploading…' : 'Change profile photo'}
+              style={{
+                width: 28, height: 28, borderRadius: '50%', border: 'none',
+                background: photoUrl ? 'transparent' : 'var(--brand)',
+                cursor: photoUploading ? 'wait' : 'pointer',
+                padding: 0, overflow: 'hidden', flexShrink: 0,
+                opacity: photoUploading ? 0.6 : 1,
+              }}
+            >
+              {photoUrl
+                ? <img src={photoUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <span style={{ fontSize: 13, color: '#fff', fontWeight: 700 }}>
+                    {(phone || '?').slice(-2)}
+                  </span>
+              }
+            </button>
+          ) : (
+            <span>5G</span>
+          )}
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            style={{ display: 'none' }}
+            onChange={handleAvatarUpload}
+          />
         </header>
 
         {/* LANDING */}

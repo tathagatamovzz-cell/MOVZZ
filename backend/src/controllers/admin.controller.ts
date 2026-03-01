@@ -372,6 +372,36 @@ export async function getProviderMetrics(req: Request, res: Response): Promise<v
     }
 }
 
+export async function getActiveBookings(_req: Request, res: Response): Promise<void> {
+    try {
+        const bookings = await prisma.booking.findMany({
+            where: {
+                state: { in: ['SEARCHING', 'CONFIRMED', 'IN_PROGRESS', 'MANUAL_ESCALATION'] },
+            },
+            select: {
+                id: true,
+                state: true,
+                pickup: true,
+                dropoff: true,
+                pickupLat: true,
+                pickupLng: true,
+                dropoffLat: true,
+                dropoffLng: true,
+                transportMode: true,
+                createdAt: true,
+                user: { select: { phone: true, name: true } },
+                provider: { select: { name: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        res.json({ success: true, count: bookings.length, data: bookings });
+    } catch (error) {
+        console.error('Active bookings error:', error);
+        res.status(500).json({ success: false, error: 'Failed to get active bookings' });
+    }
+}
+
 export async function getSystemMetrics(_req: Request, res: Response): Promise<void> {
     try {
         const now = new Date();
