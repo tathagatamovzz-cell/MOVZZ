@@ -78,8 +78,15 @@ export async function googleCallback(req: Request, res: Response): Promise<void>
                 data: {
                     phone: phoneKey,
                     name: profile.name || null,
+                    email: profile.email || null,
                     referralCode: generateReferralCode(),
                 },
+            });
+        } else if (profile.email && !user.email) {
+            // Backfill email if user logged in before this was added
+            user = await prisma.user.update({
+                where: { id: user.id },
+                data: { email: profile.email },
             });
         }
 

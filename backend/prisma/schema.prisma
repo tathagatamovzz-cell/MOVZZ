@@ -49,15 +49,16 @@ enum TransportMode {
 // ─── Models ─────────────────────────────────────────────
 
 model User {
-  id           String    @id @default(cuid())
-  phone        String    @unique
-  name         String?
-  email        String?
-  referralCode String    @unique
-  referredBy   String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  lastLoginAt  DateTime?
+  id              String    @id @default(cuid())
+  phone           String    @unique
+  name            String?
+  email           String?
+  profilePhotoKey String?   // S3 object key — e.g. users/{id}/profile.jpg
+  referralCode    String    @unique
+  referredBy      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastLoginAt     DateTime?
 
   bookings Booking[]
   credits  UserCredit[]

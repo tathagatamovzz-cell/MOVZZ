@@ -4,6 +4,7 @@ import {
     getDashboard,
     manualConfirmBooking,
     getEscalatedBookings,
+    getActiveBookings,
     listProviders,
     createProvider,
     updateProvider,
@@ -24,6 +25,7 @@ router.get('/dashboard', getDashboard);
 router.get('/metrics', getSystemMetrics);
 
 // ─── Booking Management ─────────────────────────────────
+router.get('/bookings/active', getActiveBookings);
 router.get('/bookings/escalated', getEscalatedBookings);
 router.post('/bookings/:bookingId/confirm', manualConfirmBooking);
 
