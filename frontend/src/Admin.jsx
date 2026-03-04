@@ -234,13 +234,25 @@ function EscalationsTab({ refreshSignal }) {
     });
   }, []);
 
+  // Initial fetch — loading starts as true from useState, no sync setState needed
   useEffect(() => {
-    reload();
+    let cancelled = false;
+    apiFetch('/bookings/escalated').then(d => {
+      if (cancelled) return;
+      if (d.success) setBookings(d.data);
+      setLoading(false);
+    });
     const interval = setInterval(reload, 15000);
-    return () => clearInterval(interval);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [reload]);
 
-  useEffect(() => { if (refreshSignal) reload(); }, [refreshSignal, reload]);
+  // Refresh from parent — inline fetch to avoid sync setState via reload()
+  useEffect(() => {
+    if (!refreshSignal) return;
+    apiFetch('/bookings/escalated').then(d => {
+      if (d.success) setBookings(d.data);
+    });
+  }, [refreshSignal]);
 
   async function confirm(bookingId) {
     if (!providerId.trim()) return alert('Enter a provider ID first.');
@@ -335,7 +347,16 @@ function ProvidersTab() {
     });
   }, []);
 
-  useEffect(() => { reload(); }, [reload]);
+  // Initial fetch — loading starts as true from useState, no sync setState needed
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/providers').then(d => {
+      if (cancelled) return;
+      if (d.success) setProviders(d.data);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [reload]);
 
   async function toggleActive(p) {
     setActioning(p.id);

@@ -122,7 +122,7 @@ function App() {
       })
       .catch(() => setPaymentError('Payment verification failed. Please contact support.'))
       .finally(() => setPaymentPending(false));
-  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load photo on auth
   useEffect(() => {
@@ -192,14 +192,14 @@ function App() {
     } else if (authError) {
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, []);
+  }, [loginWithOAuthToken, connectSocket]);
 
   // Connect socket on mount if already authenticated (e.g. page reload with stored token)
   useEffect(() => {
     const token = localStorage.getItem('movzz_token');
     if (token) connectSocket(token);
     return () => disconnectSocket();
-  }, []);
+  }, [connectSocket, disconnectSocket]);
 
   function moveTo(next) {
     if (!screens.includes(next)) return;
