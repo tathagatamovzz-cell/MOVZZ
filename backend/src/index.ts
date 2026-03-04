@@ -29,6 +29,7 @@ import adminRoutes from './routes/admin.routes';
 import rideRoutes from './routes/ride.routes';
 import quotesRoutes from './routes/quotes.routes';
 import uploadRoutes from './routes/upload.routes';
+import paymentRoutes from './routes/payment.routes';
 import prisma from './config/database';
 import { setIo } from './config/socket';
 import { verifyToken } from './services/jwt.service';
@@ -104,6 +105,7 @@ app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/rides', rideRoutes);
 app.use('/api/v1/quotes', quotesRoutes);
 app.use('/api/v1/upload', uploadRoutes);
+app.use('/api/v1/payments', paymentRoutes);
 
 // ─── 404 Handler ────────────────────────────────────────
 

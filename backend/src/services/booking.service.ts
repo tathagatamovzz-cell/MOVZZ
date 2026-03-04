@@ -15,12 +15,16 @@
 
 import { BookingState, TripType } from '@prisma/client';
 import prisma from '../config/database';
-import { findBestProvider, ScoredProvider } from './provider-scoring.service';
+import { findBestProvider, ScoredProvider, hardFilter, predictReliability } from './provider-scoring.service';
 import redis from '../config/redis';
 import { estimateSingleFare } from './fare.service';
 import { getIo } from '../config/socket';
 import { bookingTimeoutQueue, recoveryQueue } from '../config/queues';
 import { sendBookingConfirmation, sendBookingCancellation } from './email.service';
+import { buildRideContext } from './context-builder.service';
+import { getProviderMetrics } from './provider-metrics.service';
+import { decideStrategy, executeStrategy } from './ai/orchestration.service';
+import { monitorBooking } from './ai/failure-detector.service';
 
 // ─── Valid State Transitions ────────────────────────────
 
@@ -146,15 +150,14 @@ export async function createBooking(params: {
     );
 
     if (cachedProviderId) {
-        // Fast path: we already know which provider the user selected.
-        // Assign directly without re-running the scoring engine.
+        // Fast path: user already picked a provider from the results screen.
         assignCachedProvider(booking.id, cachedProviderId).catch(err => {
             console.error(`Cached provider assignment failed for booking ${booking.id}:`, err);
         });
     } else {
-        // Normal path: run the scoring engine to find best available provider.
-        assignProvider(booking.id, tripType as 'HIGH_RELIABILITY' | 'STANDARD').catch(err => {
-            console.error(`Provider assignment failed for booking ${booking.id}:`, err);
+        // AI path: context-aware orchestration with fallback to legacy scoring.
+        assignWithAI(booking.id, tripType as 'HIGH_RELIABILITY' | 'STANDARD', params).catch(err => {
+            console.error(`AI assignment failed for booking ${booking.id}:`, err);
         });
     }
 
@@ -256,6 +259,107 @@ async function assignCachedProvider(bookingId: string, providerId: string) {
         'PROVIDER_ASSIGNED',
         `Cached provider ${provider.name} assigned from quote selection`
     );
+}
+
+// ─── Assign With AI (Orchestration Path) ─────────────────
+
+async function assignWithAI(
+    bookingId: string,
+    tripType: 'HIGH_RELIABILITY' | 'STANDARD',
+    params: {
+        pickupLat?: number; pickupLng?: number;
+        dropoffLat?: number; dropoffLng?: number;
+        transportMode?: string;
+    },
+) {
+    try {
+        const context  = buildRideContext(params);
+        const eligible = await hardFilter({ minReliability: 0.70 });
+
+        if (eligible.length === 0) {
+            throw new Error('No eligible providers in expanded pool');
+        }
+
+        // Fetch full provider objects + compute AI scores
+        const providers = await prisma.provider.findMany({ where: { id: { in: eligible } } });
+        const scored = await Promise.all(providers.map(async p => {
+            const metrics = await getProviderMetrics(p.id);
+            const score   = predictReliability(p, context, metrics);
+            return { provider: p, score };
+        }));
+        scored.sort((a, b) => b.score.score - a.score.score);
+
+        const topScore = scored[0]?.score.score ?? 0;
+        const strategy = decideStrategy(topScore);
+
+        const previousAttempts = await prisma.bookingAttempt.findMany({
+            where: { bookingId }, select: { providerId: true },
+        });
+        const attemptedIds = previousAttempts.map(a => a.providerId);
+        const freshProviders = scored
+            .filter(s => !attemptedIds.includes(s.provider.id))
+            .map(s => s.provider.id);
+
+        await executeStrategy(
+            freshProviders,
+            strategy,
+            async (providerId) => {
+                // Each dispatch attempt: create a BookingAttempt and assign provider
+                const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+                if (!booking || booking.state !== 'SEARCHING') return false;
+
+                const scoredEntry = scored.find(s => s.provider.id === providerId);
+                await prisma.bookingAttempt.create({
+                    data: {
+                        bookingId,
+                        providerId,
+                        attemptNumber: attemptedIds.length + 1,
+                        success: true,
+                        score: scoredEntry?.score.score ?? null,
+                        reliability: scoredEntry?.provider.reliability ?? null,
+                        eta: null,
+                        fare: booking.fareEstimate,
+                    },
+                });
+                await prisma.booking.update({
+                    where: { id: bookingId },
+                    data: {
+                        providerId,
+                        providerType: 'INDIVIDUAL_DRIVER',
+                        state: 'CONFIRMED',
+                        previousState: 'SEARCHING',
+                        confirmedAt: new Date(),
+                        orchestrationStrategy: strategy,
+                        aiReliabilityScore: scoredEntry?.score.score ?? null,
+                        contextSnapshot: context as any,
+                        timeToConfirm: Math.round((Date.now() - booking.createdAt.getTime()) / 1000),
+                    },
+                });
+                await logBookingEvent(
+                    bookingId, 'PROVIDER_ASSIGNED',
+                    `[AI:${strategy}] Provider ${scoredEntry?.provider.name ?? providerId} assigned (score: ${scoredEntry?.score.score?.toFixed(1) ?? '?'})`,
+                );
+                return true;
+            },
+        );
+
+        // Store strategy on booking even if no provider found yet
+        await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                orchestrationStrategy: strategy,
+                aiReliabilityScore: topScore,
+                contextSnapshot: context as any,
+            },
+        }).catch(() => {}); // ignore if already updated above
+
+        monitorBooking(bookingId);
+
+        console.log(`[AI] Booking ${bookingId}: strategy=${strategy}, topScore=${topScore.toFixed(1)}`);
+    } catch (aiErr: any) {
+        console.error(`[AI] Falling back to legacy assignProvider for ${bookingId}:`, aiErr.message);
+        await assignProvider(bookingId, tripType);
+    }
 }
 
 // ─── Assign Provider (Scoring Path) ─────────────────────

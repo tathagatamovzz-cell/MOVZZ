@@ -97,6 +97,16 @@ model Booking {
   recoveryAttempts   Int           @default(0)
   manualIntervention Boolean       @default(false)
   metadata           Json?
+  razorpayOrderId        String?
+  razorpayPaymentId      String?
+  paidAt                 DateTime?
+
+  // AI orchestration fields (Week 1)
+  orchestrationStrategy  String?
+  orchestrationReasoning String?
+  aiReliabilityScore     Float?
+  contextSnapshot        Json?
+  timeToConfirm          Int?      // seconds from SEARCHING → CONFIRMED
 
   user     User              @relation(fields: [userId], references: [id])
   provider Provider?         @relation(fields: [providerId], references: [id])
@@ -121,9 +131,11 @@ model Provider {
   apiEndpoint     String?
   commissionRate  Float         @default(0.10)
   paymentTerms    String        @default("T+2")
-  active          Boolean       @default(true)
-  pausedUntil     DateTime?
-  pauseReason     String?
+  active              Boolean       @default(true)
+  pausedUntil         DateTime?
+  pauseReason         String?
+  currentActiveRides  Int           @default(0)
+  maxCapacity         Int           @default(5)
   reliability     Float         @default(0.85)
   rating          Float         @default(4.5)
   totalRides      Int           @default(0)

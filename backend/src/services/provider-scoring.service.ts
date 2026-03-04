@@ -14,6 +14,16 @@
  */
 
 import prisma from '../config/database';
+import { Provider } from '@prisma/client';
+import {
+    RideContext,
+    ProviderMetrics,
+    ReliabilityScore,
+    ScoreBreakdown,
+    Zone,
+    WeatherCondition,
+    RideType,
+} from '../types/ai.types';
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -271,4 +281,135 @@ export async function findTopProviders(
     scoredProviders.sort((a, b) => b.score - a.score);
 
     return scoredProviders.slice(0, count);
+}
+
+// ─── AI: predictReliability ──────────────────────────────
+
+/**
+ * predictReliability — Context-aware reliability prediction (AI Week 1)
+ *
+ * Extends the static base score with 8 contextual adjustments:
+ *   time, zone, weather, distance, capacity, recent perf,
+ *   ride type, user match.
+ *
+ * All existing functions above are unchanged — this runs in parallel
+ * alongside the legacy path until AI-8 wires it as the primary path.
+ */
+export function predictReliability(
+    provider: Provider,
+    context: RideContext,
+    metrics: ProviderMetrics,
+): ReliabilityScore {
+    const reasoning: string[] = [];
+    const warnings:  string[] = [];
+
+    // Base: provider historical reliability (0–100)
+    const base = provider.reliability * 100;
+
+    // ── 1. Time adjustment (±10) ──────────────────────────
+    const hourRate = metrics.hourlySuccessRate[context.hour] ?? metrics.overallSuccessRate;
+    const timeRaw  = (hourRate - metrics.overallSuccessRate) * 100;
+    const timeAdjustment = clamp(timeRaw, -10, 10);
+    if (timeAdjustment !== 0) {
+        reasoning.push(
+            `${timeAdjustment > 0 ? '+' : ''}${timeAdjustment.toFixed(1)} time: ` +
+            `${(hourRate * 100).toFixed(0)}% success at hour ${context.hour} ` +
+            `vs ${(metrics.overallSuccessRate * 100).toFixed(0)}% overall`
+        );
+    }
+
+    // ── 2. Zone adjustment (±15) ──────────────────────────
+    let zoneAdjustment = 0;
+    if (metrics.dominantZones.includes(context.zone)) {
+        zoneAdjustment = 15;
+        reasoning.push(`+15 zone: provider specialises in ${context.zone}`);
+    } else if (metrics.dominantZones.length > 0 && !metrics.dominantZones.includes(context.zone)) {
+        // Only penalise if we actually have zone data and it doesn't match
+        zoneAdjustment = -8;
+        reasoning.push(`-8 zone: provider primarily serves ${metrics.dominantZones[0]}, not ${context.zone}`);
+    }
+
+    // ── 3. Weather adjustment (±8) ────────────────────────
+    let weatherAdjustment = 0;
+    if (context.weather === WeatherCondition.RAIN) {
+        weatherAdjustment = -5;
+        reasoning.push('-5 weather: rain reduces acceptance rates');
+    } else if (context.weather === WeatherCondition.HEAVY_RAIN) {
+        weatherAdjustment = -8;
+        warnings.push('Heavy rain — significant reliability drop expected');
+        reasoning.push('-8 weather: heavy rain');
+    } else if (context.weather === WeatherCondition.STORM) {
+        weatherAdjustment = -8;
+        warnings.push('Storm conditions — consider manual escalation');
+        reasoning.push('-8 weather: storm');
+    }
+
+    // ── 4. Distance adjustment (±5) ───────────────────────
+    let distanceAdjustment = 0;
+    const [minDist, maxDist] = metrics.typicalDistanceRange;
+    if (context.distanceKm < minDist - 2 || context.distanceKm > maxDist + 2) {
+        distanceAdjustment = -5;
+        reasoning.push(
+            `-5 distance: ${context.distanceKm.toFixed(1)}km outside provider's typical ` +
+            `${minDist.toFixed(1)}–${maxDist.toFixed(1)}km range`
+        );
+    }
+
+    // ── 5. Capacity adjustment (±12) — placeholder ────────
+    // Real value wired in AI-7 (currentActiveRides / maxCapacity on Provider model)
+    const capacityAdjustment = 0;
+
+    // ── 6. Recent performance adjustment (±10) ───────────
+    const recentVsOverall = metrics.last6hSuccessRate - metrics.overallSuccessRate;
+    const recentPerfAdjustment = clamp(recentVsOverall * 100, -10, 10);
+    if (Math.abs(recentPerfAdjustment) >= 2) {
+        reasoning.push(
+            `${recentPerfAdjustment > 0 ? '+' : ''}${recentPerfAdjustment.toFixed(1)} recency: ` +
+            `${(metrics.last6hSuccessRate * 100).toFixed(0)}% last 6h vs ` +
+            `${(metrics.overallSuccessRate * 100).toFixed(0)}% overall`
+        );
+    }
+    if (metrics.consecutiveFailures >= 3) {
+        warnings.push(`${metrics.consecutiveFailures} consecutive failures — provider may be unavailable`);
+    }
+
+    // ── 7. Ride type adjustment (±5) ─────────────────────
+    let rideTypeAdjustment = 0;
+    if (context.rideType === RideType.AIRPORT && metrics.dominantZones.includes(Zone.AIRPORT)) {
+        rideTypeAdjustment = 5;
+        reasoning.push('+5 ride type: provider specialises in airport rides');
+    }
+
+    // ── 8. User match adjustment (±3) — Week 4 refines ───
+    const userMatchAdjustment = 3; // default positive until personalisation is built
+
+    // ── Final score ───────────────────────────────────────
+    const raw = base + timeAdjustment + zoneAdjustment + weatherAdjustment +
+                distanceAdjustment + capacityAdjustment + recentPerfAdjustment +
+                rideTypeAdjustment + userMatchAdjustment;
+    const score = clamp(Math.round(raw * 10) / 10, 0, 100);
+
+    // ── Confidence (based on data volume) ────────────────
+    const attemptCount = metrics.overallSuccessRate > 0
+        ? metrics.consecutiveSuccesses + metrics.consecutiveFailures
+        : 0;
+    const confidence = attemptCount > 50 ? 1.0 : attemptCount > 10 ? 0.7 : 0.5;
+
+    const breakdown: ScoreBreakdown = {
+        base,
+        timeAdjustment,
+        zoneAdjustment,
+        weatherAdjustment,
+        distanceAdjustment,
+        capacityAdjustment,
+        recentPerfAdjustment,
+        rideTypeAdjustment,
+        userMatchAdjustment,
+    };
+
+    return { score, confidence, reasoning, warnings, breakdown };
+}
+
+function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
 }

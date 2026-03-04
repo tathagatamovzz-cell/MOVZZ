@@ -55,6 +55,8 @@ function App() {
   const [destCoords, setDestCoords] = useState(null);
   const [selectedRide, setSelectedRide] = useState(null);
   const [booked, setBooked] = useState(false);
+  const [paymentPending, setPaymentPending] = useState(false);
+  const [paymentError, setPaymentError] = useState(null);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [otpCode, setOtpCode] = useState("");
 
@@ -75,6 +77,52 @@ function App() {
   const [photoUploading, setPhotoUploading] = useState(false);
   const photoInputRef = useRef(null);
   const API_BASE = 'http://localhost:3000/api/v1';
+
+  // ── Razorpay Payment Link return handler ─────────────────
+  // Razorpay redirects back to FRONTEND_URL with these query params after payment.
+  // We detect them on mount, verify with the backend, then restore the booked state.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const paymentId = params.get('razorpay_payment_id');
+    const linkId = params.get('razorpay_payment_link_id');
+    const refId = params.get('razorpay_payment_link_reference_id'); // = bookingId
+    const status = params.get('razorpay_payment_link_status');
+    const signature = params.get('razorpay_signature');
+
+    if (!paymentId || !linkId || !refId || !signature) return; // not a payment return
+
+    // Clean up URL so params don't persist on refresh
+    window.history.replaceState({}, '', window.location.pathname);
+
+    const bookingId = refId;
+    const token = localStorage.getItem('movzz_token');
+    if (!token) return;
+
+    setPaymentPending(true);
+    fetch(`${API_BASE}/payments/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        bookingId,
+        razorpayPaymentId: paymentId,
+        razorpayPaymentLinkId: linkId,
+        razorpayPaymentLinkRefId: refId,
+        razorpayPaymentLinkStatus: status,
+        razorpaySignature: signature,
+      }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setBooked(true);
+          setScreen('results');
+        } else {
+          setPaymentError(data.error || 'Payment verification failed');
+        }
+      })
+      .catch(() => setPaymentError('Payment verification failed. Please contact support.'))
+      .finally(() => setPaymentPending(false));
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load photo on auth
   useEffect(() => {
@@ -225,12 +273,40 @@ function App() {
 
   async function bookRide() {
     if (!selectedRide) return;
+
     const success = await createBooking(
       source, destination, selectedRide.id,
       sourceCoords?.lat, sourceCoords?.lng,
       destCoords?.lat, destCoords?.lng,
     );
-    if (success) {
+    if (!success) return;
+
+    const booking = useBookingStore.getState().currentBooking;
+
+    // Redirect to Razorpay Payment Link if keys configured
+    if (booking?.id && import.meta.env.VITE_RAZORPAY_KEY_ID) {
+      setPaymentPending(true);
+      setPaymentError(null);
+      try {
+        const token = localStorage.getItem('movzz_token');
+        const res = await fetch(`${API_BASE}/payments/create-link`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ bookingId: booking.id }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to create payment link');
+
+        // Redirect to Razorpay hosted payment page
+        // After payment, Razorpay redirects back to FRONTEND_URL with params
+        // and the useEffect above handles verification automatically
+        window.location.href = data.data.shortUrl;
+      } catch (err) {
+        setPaymentError(err.message || 'Payment setup failed. Please try again.');
+        setPaymentPending(false);
+      }
+    } else {
+      // Dev fallback: no Razorpay keys configured
       setBooked(true);
     }
   }
@@ -648,14 +724,23 @@ function App() {
             <button
               className="btn primary"
               onClick={bookRide}
-              disabled={!selectedRide || booked}
+              disabled={!selectedRide || booked || paymentPending}
             >
               {booked
-                ? "Ride Booked"
-                : `Book ${selectedRide?.type || selectedRide?.line || "Ride"} Now`
+                ? "Ride Booked ✓"
+                : paymentPending
+                  ? "Processing Payment…"
+                  : `Book ${selectedRide?.type || selectedRide?.line || "Ride"} Now`
               }
             </button>
           </div>
+
+          {paymentError && (
+            <div className="booking-panel" style={{ borderLeft: '3px solid #ef4444' }}>
+              <p style={{ color: '#ef4444', margin: 0 }}>Payment failed: {paymentError}</p>
+              <small>Please try again or choose a different payment method.</small>
+            </div>
+          )}
 
           {booked && (
             <div className="booking-panel">
