@@ -1,7 +1,6 @@
-# MOVZZ — Master Roadmap
-
+# MOVZZ — Master Roadmap (Combined)
 > Reliability-Orchestrated Mobility Platform · Chennai, India
-> Last updated: March 2026
+> Last updated: March 10, 2026
 
 ---
 
@@ -10,9 +9,12 @@
 | Symbol | Meaning |
 |--------|---------|
 | ✅ DONE | Implemented and working |
-| 🔄 IN PROGRESS | Partially implemented |
+| 🔴 CRITICAL | Security risk / launch blocker |
+| 🟠 HIGH | Needed for beta users |
+| 🟡 MEDIUM | Important but deferrable post-launch |
+| 🟢 NICE | Post-launch enhancement |
 | ⬜ TODO | Not yet started |
-| 🤖 AI | New AI engine task (from AI Implementation Plan) |
+| 🤖 AI | AI engine task |
 
 ---
 
@@ -20,18 +22,40 @@
 
 | Category | Total | Done | Remaining |
 |----------|-------|------|-----------|
-| Section 1 — Foundation | 33 | 33 | 0 |
-| Section 2 — Platform Features | 22 | 9 | 13 |
-| Section 3 — AI Intelligence Layer | 23 | 8 | 15 |
-| **TOTAL** | **78** | **50** | **28** |
+| Section 0 — Security Hardening | 11 | 11 | 0 |
+| Section 1 — Foundation | 34 | 34 | 0 |
+| Section 2 — Platform Features | 26 | 9 | 17 |
+| Section 3 — AI Intelligence Layer | 23 | 13 | 10 |
+| Section 4 — Production & Deployment | 14 | 0 | 14 |
+| **TOTAL** | **108** | **67** | **41** |
 
-**Progress: 50/78 tasks (64%)**
+**Progress: 67/108 tasks (62%)**
 
 ---
 
-## SECTION 1 — Foundation (33/33 Complete ✅)
+## SECTION 0 — Security Hardening ✅ (11/11 Complete)
 
-### Phase 1 — Core Backend (12/12 ✅)
+> Completed March 10, 2026 — all 11 vulnerabilities patched.
+
+| # | Priority | Task | Status |
+|---|----------|------|--------|
+| S1 | 🔴 | **Remove hardcoded JWT fallback secret** — throws `Error('JWT_SECRET is required')` on startup | ✅ DONE |
+| S2 | 🔴 | **Fix auth race condition** — `auth.controller.ts` uses `prisma.user.upsert()` — atomic, no duplicate crash | ✅ DONE |
+| S3 | 🔴 | **Fix OAuth race condition** — `oauth.controller.ts` uses `upsert` — safe under concurrent logins | ✅ DONE |
+| S4 | 🔴 | **Add admin role protection** — `role String @default("user")` in schema; `requireAdmin` middleware on all `/admin/` routes | ✅ DONE |
+| S5 | 🔴 | **Fix hardcoded API URL** — all three files now use `VITE_API_URL` env var with localhost fallback | ✅ DONE |
+| S6 | 🔴 | **Protect env files** — `.gitignore` fixed; `backend/.env.example` + `frontend/.env.example` created | ✅ DONE |
+| S7 | 🟠 | **OTP rate limiting** — `express-rate-limit` on `/verify-otp`: 5 attempts per phone per 10 min | ✅ DONE |
+| S8 | 🟠 | **Fix Socket memory leak** — handler refs stored; `socket.off()` called with same refs on disconnect | ✅ DONE |
+| S9 | 🟠 | **Fix dual fare engine** — `quotes.service.ts` FARE_CONFIGS aligned with `fare.service.ts` rates | ✅ DONE |
+| S10 | 🟠 | **Add token expiry** — `tokenExpiry = Date.now() + 7d` on login; auto-logout on startup if expired | ✅ DONE |
+| S11 | 🟠 | **Harden CORS + global rate limit** — CORS locked to allowlist; 100 req/15 min global limiter | ✅ DONE |
+
+---
+
+## SECTION 1 — Foundation ✅ (34/34 Complete)
+
+### Phase 1 — Core Backend ✅ (12/12)
 
 | # | Task | Status | Key File(s) |
 |---|------|--------|-------------|
@@ -40,7 +64,7 @@
 | 3 | Redis cache with in-memory fallback | ✅ DONE | `backend/src/config/redis.ts` |
 | 4 | OTP authentication (phone) with JWT | ✅ DONE | `backend/src/controllers/auth.controller.ts` |
 | 5 | Fare engine — mode-specific rates, surge, Haversine×1.35, airport detection, paise precision | ✅ DONE | `backend/src/services/fare.service.ts` |
-| 6 | Provider scoring — basic reliability from historical success rate | ✅ DONE | `backend/src/services/provider-scoring.service.ts` |
+| 6 | Provider scoring — reliability from historical success rate | ✅ DONE | `backend/src/services/provider-scoring.service.ts` |
 | 7 | Booking state machine — SEARCHING → CONFIRMED → IN_PROGRESS → COMPLETED / FAILED / CANCELLED / MANUAL_ESCALATION | ✅ DONE | `backend/src/services/booking.service.ts` |
 | 8 | Recovery service — 3-level retry, auto-escalation, ₹100 compensation credit | ✅ DONE | `backend/src/services/recovery.service.ts` |
 | 9 | Quotes API — ranked options with reliability rationale | ✅ DONE | `backend/src/services/quotes.service.ts` |
@@ -48,248 +72,242 @@
 | 11 | Admin dashboard API — stats, provider list | ✅ DONE | `backend/src/controllers/admin.controller.ts` |
 | 12 | Rate limiting, CORS, Helmet security headers | ✅ DONE | `backend/src/index.ts` |
 
----
-
-### Phase 2 — Frontend Prototype (7/7 ✅)
+### Phase 2 — Frontend Prototype ✅ (7/7)
 
 | # | Task | Status | Key File(s) |
 |---|------|--------|-------------|
 | 13 | React + Vite scaffold with Zustand state management | ✅ DONE | `frontend/src/App.jsx` |
 | 14 | 5-screen flow: Landing → Auth → Transport → Destination → Results | ✅ DONE | `frontend/src/App.jsx` |
 | 15 | Transport mode selector — CAB (Economy/Comfort/Premium), Bike, Auto, Metro | ✅ DONE | `frontend/src/App.jsx` |
-| 16 | Results screen — ranked quote cards with reliability score, ETA, price, tags (BEST / CHEAPEST / PREMIUM) | ✅ DONE | `frontend/src/App.jsx` |
+| 16 | Results screen — ranked quote cards with reliability score, ETA, price, tags | ✅ DONE | `frontend/src/App.jsx` |
 | 17 | Auth store — OTP send/verify, JWT storage, auth state | ✅ DONE | `frontend/src/stores/authStore.ts` |
 | 18 | Booking store — fetchQuotes, createBooking, Socket.IO state sync | ✅ DONE | `frontend/src/stores/bookingStore.ts` |
 | 19 | API client (axios) with JWT header injection | ✅ DONE | `frontend/src/api/client.ts` |
 
----
-
-### Phase 3 — Production Hardening (5/5 ✅)
+### Phase 3 — Production Hardening ✅ (5/5)
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 20 | WebSockets (Socket.IO) — `booking:state_changed` server-push, per-user rooms, JWT on handshake | ✅ DONE | `backend/src/config/socket.ts`, `frontend/src/stores/bookingStore.ts` |
-| 21 | Google OAuth2 — direct REST flow, no Passport.js, `phone = "oauth_google_<sub>"` | ✅ DONE | `backend/src/controllers/oauth.controller.ts` |
-| 22 | Mapbox geocoding autocomplete — 300ms debounce, India filter, `onMouseDown` before blur | ✅ DONE | `frontend/src/App.jsx` |
-| 23 | Interactive map — react-map-gl, green (pickup) + orange (dropoff) markers, auto-pan on coord change | ✅ DONE | `frontend/src/App.jsx` |
-| 24 | Chennai preset location chips with real lat/lng coordinates | ✅ DONE | `frontend/src/App.jsx` |
+| 20 | WebSockets (Socket.IO) — `booking:state_changed` server-push, per-user rooms, JWT on handshake | ✅ DONE | `backend/src/config/socket.ts` |
+| 21 | Google OAuth2 — direct REST flow, no Passport.js | ✅ DONE | `backend/src/controllers/oauth.controller.ts` |
+| 22 | Mapbox geocoding autocomplete — 300ms debounce, India filter | ✅ DONE | `frontend/src/App.jsx` |
+| 23 | Interactive map — react-map-gl, green/orange markers, auto-pan | ✅ DONE | `frontend/src/App.jsx` |
+| 24 | Chennai preset location chips with real lat/lng | ✅ DONE | `frontend/src/App.jsx` |
 
----
-
-### Phase 4 — Background Jobs / BullMQ (4/4 ✅)
+### Phase 4 — Background Jobs / BullMQ ✅ (4/4)
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 25 | BullMQ queue singletons — booking-timeout, recovery-retry, sms-dispatch | ✅ DONE | `backend/src/config/queues.ts` |
-| 26 | Booking timeout worker — auto-cancel SEARCHING after 5 min, issue compensation | ✅ DONE | `backend/src/workers/booking-timeout.worker.ts` |
-| 27 | Recovery retry worker — async provider retry, 2s delay, delegates to 3-level retry | ✅ DONE | `backend/src/workers/recovery.worker.ts` |
+| 25 | BullMQ queue singletons — booking-timeout, recovery-retry, sms-dispatch, nightly-aggregation, ml-data-collection | ✅ DONE | `backend/src/config/queues.ts` |
+| 26 | Booking timeout worker — auto-cancel SEARCHING after 5 min | ✅ DONE | `backend/src/workers/booking-timeout.worker.ts` |
+| 27 | Recovery retry worker — async provider retry, 2s delay | ✅ DONE | `backend/src/workers/recovery.worker.ts` |
 | 28 | SMS dispatch worker — 3 retries, exponential backoff, Twilio-ready (mock in dev) | ✅ DONE | `backend/src/workers/sms.worker.ts` |
 
----
-
-### Phase 9 — Admin Panel (5/5 ✅)
+### Phase 5 — Payments ✅ (5/5)
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 29 | Full Admin Panel UI at `/admin` — 4 tabs: Dashboard, Escalations, Providers, Metrics | ✅ DONE | `frontend/src/Admin.jsx` |
-| 30 | Live booking map — react-map-gl, color-coded markers by state, 10s poll + Socket.IO push | ✅ DONE | `frontend/src/Admin.jsx`, `backend/src/controllers/admin.controller.ts` |
-| 31 | Provider management — list, pause/resume, add new provider form | ✅ DONE | `frontend/src/Admin.jsx` |
-| 32 | Manual escalation queue — ops confirms MANUAL_ESCALATION bookings with provider ID | ✅ DONE | `frontend/src/Admin.jsx` |
-| 33 | Analytics tab — today's booking states, weekly revenue, top providers | ✅ DONE | `frontend/src/Admin.jsx` |
+| 29 | Razorpay — create payment link endpoint | ✅ DONE | `POST /api/v1/payments/create-link` |
+| 30 | Razorpay — verify payment + HMAC-SHA256 signature check | ✅ DONE | `POST /api/v1/payments/verify` |
+| 31 | Frontend — Razorpay Payment Link redirect + return detection | ✅ DONE | `frontend/src/App.jsx` |
+| 32 | Provider payout tracking (T+2 terms) | ✅ DONE | `Payout` table, `payment.service.ts` |
+| **NEW** | **Razorpay webhook handler** — server-to-server `payment_link.paid` event; HMAC-SHA256 verification; idempotent; auto-schedules T+2 payout | ✅ DONE | `POST /api/v1/payments/webhook`, `payment.service.ts` |
 
----
-
-### Phase 7 — Infrastructure (3/4 ✅)
+### Phase 9 — Admin Panel ✅ (5/5)
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 34 | Sentry error tracking — `@sentry/node` + `@sentry/react`, real DSN active, gated on env var | ✅ DONE | `backend/src/index.ts`, `frontend/src/main.jsx` |
-| 35 | Neon.tech — cloud Postgres DATABASE_URL swap ready in `backend/.env` | ✅ DONE | `backend/.env` (commented format) |
-| 36 | AWS S3 — presigned URL pattern, profile photo upload endpoint, avatar in app header | ✅ DONE | `backend/src/services/s3.service.ts`, `backend/src/controllers/upload.controller.ts` |
+| 33 | Full Admin Panel UI at `/admin` — 4 tabs: Dashboard, Escalations, Providers, Metrics | ✅ DONE | `frontend/src/Admin.jsx` |
+| 34 | Live booking map — react-map-gl, color-coded markers by state | ✅ DONE | `frontend/src/Admin.jsx` |
+| 35 | Provider management — list, pause/resume, add new provider | ✅ DONE | `frontend/src/Admin.jsx` |
+| 36 | Manual escalation queue — ops confirms MANUAL_ESCALATION bookings | ✅ DONE | `frontend/src/Admin.jsx` |
+| 37 | Analytics tab — today's booking states, weekly revenue, top providers | ✅ DONE | `frontend/src/Admin.jsx` |
 
----
-
-### Phase 6 — Notifications (1/4 ✅)
-
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| 37 | Transactional email via Resend — confirmation, cancellation, compensation; fire-and-forget on state transitions | ✅ DONE | `backend/src/services/email.service.ts`, `RESEND_API_KEY` set |
-
----
-
-### Phase 10 — Mobile (1/6 ✅)
+### Phase 7 — Infrastructure (partial) ✅ (3/4)
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 38 | PWA — vite-plugin-pwa, service worker, web manifest, offline cache, installable on Android/iOS | ✅ DONE | `frontend/vite.config.js`, `vite-plugin-pwa` |
+| 38 | Sentry error tracking — `@sentry/node` + `@sentry/react`, gated on env var | ✅ DONE | `backend/src/index.ts`, `frontend/src/main.jsx` |
+| 39 | Neon.tech — cloud Postgres DATABASE_URL swap ready in `backend/.env` | ✅ DONE | `backend/.env` (commented format) |
+| 40 | AWS S3 — presigned URL pattern, profile photo upload endpoint | ✅ DONE | `backend/src/services/s3.service.ts` |
 
----
-
-## SECTION 2 — Platform Features (5/22 Done, 17 Remaining)
-
-### Phase 5 — Payments ✅ (4/4)
+### Phase 6 — Notifications (partial) ✅ (1/4)
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 39 | Razorpay — create payment link endpoint | ✅ DONE | `POST /api/v1/payments/create-link` · Payment Links API (rzp.io/l/...) |
-| 40 | Razorpay — verify payment + HMAC-SHA256 signature check | ✅ DONE | `POST /api/v1/payments/verify` · sets `paidAt` on Booking |
-| 41 | Frontend — Razorpay Payment Link redirect | ✅ DONE | `window.location.href = shortUrl` · return detection via URL params on mount |
-| 42 | Provider payout tracking (T+2 terms) | ✅ DONE | `Payout` table, `scheduleProviderPayout()` in `payment.service.ts` |
+| 41 | Transactional email via Resend — confirmation, cancellation, compensation | ✅ DONE | `backend/src/services/email.service.ts` |
+
+### Phase 10 — Mobile (partial) ✅ (1/6)
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 42 | PWA — vite-plugin-pwa, service worker, web manifest, offline cache, installable | ✅ DONE | `frontend/vite.config.js` |
 
 ---
+
+## SECTION 2 — Platform Features ⬜ (9/26 Done, 17 Remaining)
 
 ### Phase 6 — Notifications (remaining) 🔄 (1/4 done)
 
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| 43 | Twilio SMS — real OTP delivery | ⬜ TODO | Replace `console.log` mock in `sms.worker.ts` · needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` |
-| 44 | FCM push notifications — booking state changes, driver ETA | ⬜ TODO | Needs React Native or PWA service worker |
-| 45 | WhatsApp API via Twilio | ⬜ TODO | Same Twilio credentials, different endpoint |
-
----
+| # | Priority | Task | Notes |
+|---|----------|------|-------|
+| 43 | 🟠 | **Twilio SMS — real OTP delivery** — replace `console.log` mock in `sms.worker.ts` with Twilio client; verify India DLT sender ID | Needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` |
+| 44 | 🟢 | FCM push notifications — booking state changes, driver ETA | Needs React Native or PWA service worker + Firebase project |
+| 45 | 🟡 | WhatsApp API via Twilio — booking alerts, driver confirmation | Same Twilio credentials, different endpoint; create message templates |
 
 ### Phase 7 — Infrastructure (remaining) 🔄 (3/4 done)
 
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| 46 | CDN — CloudFront or Cloudflare in front of S3 | ⬜ TODO | Static asset delivery for frontend + S3 files |
+| # | Priority | Task | Notes |
+|---|----------|------|-------|
+| 46 | 🟡 | CDN — CloudFront or Cloudflare in front of S3 | Quick win ~1 hr after S3 verified |
 
----
+### Phase 8 — Provider Integrations ⬜ (0/6 — all new)
 
-### Phase 8 — Provider Integrations ⬜ (0/4)
-
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| 47 | Fast Track Cabs API integration | ⬜ TODO | Real provider dispatch instead of mock scoring |
-| 48 | Chennai Call Taxi API integration | ⬜ TODO | Local fleet operator |
-| 49 | Uber/Ola aggregator fallback | ⬜ TODO | When all MOVZZ providers fail — last resort layer |
-| 50 | Provider onboarding portal — KYC + doc upload | ⬜ TODO | S3 `providerDocKey()` already wired, needs admin UI + flow |
-
----
+| # | Priority | Task | File(s) |
+|---|----------|------|---------|
+| P0 | 🟠 | **Create `IProvider` interface + `ProviderRegistry`** — standard contract for all providers: `getEstimate()`, `checkAvailability()`, `bookRide?()` | `backend/src/services/providers/provider.interface.ts` NEW, `provider.registry.ts` NEW |
+| 47 | 🟠 | **Fast Track Cabs integration** — WhatsApp Business API booking or manual confirmation flow; show price with "confirmation required" tag | `backend/src/services/providers/fasttrack.provider.ts` NEW |
+| 48 | 🟠 | **Chennai Call Taxi integration** — same pattern as Fast Track | `backend/src/services/providers/chennai-call-taxi.provider.ts` NEW |
+| 49 | 🟡 | Uber/Ola/Rapido aggregator fallback — reverse-engineer price estimate APIs (no booking); Redis cache 5 min; graceful fallback if unavailable | `uber.provider.ts`, `ola.provider.ts`, `rapido.provider.ts` NEW |
+| 50 | 🟡 | Provider onboarding portal — KYC + doc upload UI; `s3.providerDocKey()` already wired | Admin UI new tab + upload flow |
+| P1 | 🟠 | **Provider Health Dashboard** — new Admin tab: status, success rate, response time, rate limits per provider | `frontend/src/Admin.jsx`, `GET /api/v1/admin/providers/health` NEW |
 
 ### Phase 10 — Mobile Apps (remaining) 🔄 (1/6 done)
 
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| 51 | React Native user app — port 5-screen flow | ⬜ TODO | Expo recommended · reuse existing API + WebSocket |
-| 52 | React Native driver app — accept/reject rides, navigation | ⬜ TODO | Separate app with driver-specific Socket.IO events |
-| 53 | Driver location tracking — real-time GPS updates | ⬜ TODO | New `driver:location_update` Socket.IO event |
-| 54 | In-app FCM push notifications | ⬜ TODO | Firebase + React Native Push Notification library |
-| 55 | App Store + Play Store deployment | ⬜ TODO | Expo EAS build |
+| # | Priority | Task | Notes |
+|---|----------|------|-------|
+| 51 | 🟢 | React Native user app — port 5-screen flow (Expo recommended) | Reuse existing API + WebSocket |
+| 52 | 🟢 | React Native driver app — accept/reject rides, navigation | Separate app; driver-specific Socket.IO events |
+| 53 | 🟢 | Driver location tracking — real-time GPS `driver:location_update` event | New event in `backend/src/config/socket.ts` |
+| 54 | 🟢 | In-app FCM push notifications | Firebase + React Native Push Notification library |
+| 55 | 🟢 | App Store + Play Store deployment | Expo EAS build |
 
 ---
 
-## SECTION 3 — AI Intelligence Layer 🤖 (0/23 — All New)
+## SECTION 3 — AI Intelligence Layer 🤖 (13/23 Done, 10 Remaining)
 
-> **Current state:** Provider scoring uses a basic historical success rate. No context, no orchestration strategy, no demand forecasting, no dynamic pricing.
->
-> This section implements 7 AI engines across 4 weeks to transform MOVZZ into a true reliability-orchestrated platform.
->
-> **Target outcomes:** Booking success rate 75% → 92%+, confirmation time 45s → <20s, revenue +10–15% via fair pricing.
+> **Achieved targets (post AI Week 1):** Booking success rate 75% → tracked. Confirmation time 45s → tracked.
+> **Remaining target:** Revenue +10–15% via fair dynamic pricing (AI Week 3).
 
----
-
-### Week 1 — Core AI Foundation ✅ (8/8)
+### AI Week 1 — Core AI Foundation ✅ (8/8)
 
 | # | Task | Status | Files |
 |---|------|--------|-------|
-| AI-1 | TypeScript AI interfaces | ✅ DONE | `backend/src/types/ai.types.ts` — `RideContext`, `ProviderMetrics`, `ReliabilityScore`, `ScoreBreakdown`, `Zone`, `WeatherCondition`, `OrchestrationStrategy` enums |
-| AI-2 | Context Builder Service | ✅ DONE | `backend/src/services/context-builder.service.ts` — Chennai zone detection, Haversine distance, peak hours, weekend, ride type |
-| AI-3 | Provider Metrics Service | ✅ DONE | `backend/src/services/provider-metrics.service.ts` — hourly rates, recency windows (1h/6h/24h/7d), streaks, Redis 5-min cache |
-| AI-4 | Reliability Predictor | ✅ DONE | `backend/src/services/provider-scoring.service.ts` — `predictReliability()` added; 8 contextual adjustments; existing functions untouched |
-| AI-5 | Orchestration Service | ✅ DONE | `backend/src/services/ai/orchestration.service.ts` — `decideStrategy()` + `executeStrategy()` with SEQUENTIAL/PARALLEL_2/PARALLEL_3/CASCADE/EMERGENCY |
-| AI-6 | Failure Detector Service | ✅ DONE | `backend/src/services/ai/failure-detector.service.ts` — risk scoring, tiered interventions, ₹50 credit at riskScore ≥ 85 |
-| AI-7 | Prisma migration — AI fields | ✅ DONE | `schema.prisma` — `orchestrationStrategy`, `aiReliabilityScore`, `contextSnapshot`, `timeToConfirm` on Booking; `currentActiveRides`, `maxCapacity` on Provider |
-| AI-8 | Wire AI into booking.service.ts | ✅ DONE | `backend/src/services/booking.service.ts` — `assignWithAI()` replaces `assignProvider()` with AI path + fallback |
+| AI-1 | TypeScript AI interfaces — `RideContext`, `ProviderMetrics`, `ReliabilityScore`, `ScoreBreakdown`, all enums | ✅ DONE | `backend/src/types/ai.types.ts` |
+| AI-2 | Context Builder Service — Chennai zone detection, Haversine distance, peak hours, weekend, ride type | ✅ DONE | `backend/src/services/context-builder.service.ts` |
+| AI-3 | Provider Metrics Service — hourly rates, recency windows (1h/6h/24h/7d), streaks, Redis 5-min cache | ✅ DONE | `backend/src/services/provider-metrics.service.ts` |
+| AI-4 | Reliability Predictor — `predictReliability()` with 8 contextual adjustments | ✅ DONE | `backend/src/services/provider-scoring.service.ts` |
+| AI-5 | Orchestration Service — `decideStrategy()` + `executeStrategy()` with SEQUENTIAL / PARALLEL_2 / PARALLEL_3 / CASCADE / EMERGENCY | ✅ DONE | `backend/src/services/ai/orchestration.service.ts` |
+| AI-6 | Failure Detector Service — risk scoring, tiered interventions, ₹50 credit at riskScore ≥ 85 | ✅ DONE | `backend/src/services/ai/failure-detector.service.ts` |
+| AI-7 | Prisma migration — AI fields on Booking + Provider | ✅ DONE | `backend/prisma/schema.prisma` |
+| AI-8 | Wire AI into booking.service.ts — `assignWithAI()` with fallback to legacy `assignProvider()` | ✅ DONE | `backend/src/services/booking.service.ts` |
+
+### AI Week 2 — Performance + Visible AI in UI ✅ (5/5)
+
+| # | Priority | Task | Status | Files |
+|---|----------|------|--------|-------|
+| AI-9 | 🟠 | **Nightly Aggregation Worker** — BullMQ CRON at midnight; per-provider success rates; rolling reliability (90%+10%); invalidates Redis cache | ✅ DONE | `backend/src/workers/nightly-aggregation.worker.ts` |
+| AI-10 | 🟠 | **Cache Service** — `getOrCompute(key, ttl, fn)` pattern; `CacheKeys` builder; `TTL` constants; `invalidateProviderScores()` | ✅ DONE | `backend/src/services/ai/cache.service.ts` |
+| AI-11 | 🟠 | **ML Data Collection Worker** — triggers on COMPLETED/FAILED/CANCELLED; writes `MLTrainingData` row with context, scores, outcome, distance, hour, day | ✅ DONE | `backend/src/workers/ml-data.worker.ts` |
+| AI-12 | 🟠 | **Prisma schema — AI Week 2 tables** — `ProviderMetricsCache` (Redis-backed aggregated metrics) + `MLTrainingData` (booking outcome training rows) | ✅ DONE | `backend/prisma/schema.prisma` |
+| AI-13 | 🟠 | **Frontend AI-enhanced results screen** — reliability progress bar (green/yellow/red), AI reasoning text (`why`), emoji badges, MOVZZ score chip, animated booking status with orchestration strategy badge | ✅ DONE | `frontend/src/App.jsx` |
+
+### AI Week 3 — Demand Forecasting + Fair Dynamic Pricing ⬜ (0/5)
+
+| # | Priority | Task | Files |
+|---|----------|------|-------|
+| AI-14 | 🟡 | **Demand Forecaster Service** — pattern matching; per zone/hour: avg rides last 4 weeks, trend, day-of-week multiplier, Chennai events CSV, weather multiplier (rain +30%); outputs `predictedRides` + confidence interval | `backend/src/services/ai/demand-forecaster.service.ts` NEW |
+| AI-15 | 🟡 | **Prisma migration — demand forecasts** — `DemandForecast` table (zone, forecastHour, predictedRides, confidence, actualRides, forecastAccuracy) | `backend/prisma/schema.prisma` |
+| AI-16 | 🟡 | **Proactive driver positioning job** — nightly 24h forecasts; detect supply gaps; trigger WhatsApp/SMS to drivers in shortage zone with ₹100 bonus incentive | `backend/src/jobs/demand-forecast-update.job.ts` NEW |
+| AI-17 | 🟡 | **Enhanced dynamic pricing** — demand multiplier +5–15%; weather: rain +8% / heavy +15% / storm +20%; traffic: low –5% / jam +12%; **hard cap: base × 1.2**; Movzz Pass users always get base fare | `backend/src/services/fare.service.ts` |
+| AI-18 | 🟡 | **Pricing breakdown API + frontend** — quotes response adds `{ baseFare, breakdown: [{factor, amount}], explanation }`; "Why this price?" modal | `backend/src/controllers/booking.controller.ts`, `frontend/src/App.jsx` |
+
+### AI Week 4 — Provider Analytics + User Personalization ⬜ (0/5)
+
+| # | Priority | Task | Files |
+|---|----------|------|-------|
+| AI-19 | 🟢 | **Provider Analytics Service** — behavioral profiles: airport specialist, morning vs night, price-sensitive vs volume; human-readable recommendations | `backend/src/services/ai/provider-analytics.service.ts` NEW |
+| AI-20 | 🟢 | **Provider Dashboard Endpoint** — `GET /api/v1/providers/:id/insights` — overallStats, bestTimes, preferredZones, earningsOptimization, aiInsights | `backend/src/controllers/provider-dashboard.controller.ts` NEW |
+| AI-21 | 🟢 | **User Personalization Service** — favorite providers, commute detection, pre-book vs last-minute, price sensitivity; `GET /api/v1/users/me/recommendations` | `backend/src/services/ai/personalization.service.ts` NEW |
+| AI-22 | 🟢 | **Prisma migration — personalization tables** — `UserPreference` + `UserPattern` | `backend/prisma/schema.prisma` |
+| AI-23 | 🟢 | **Admin AI Dashboard** — orchestration strategy distribution, prediction accuracy, AI vs non-AI success rate, demand vs actual heatmap | `backend/src/controllers/admin.controller.ts`, `frontend/src/Admin.jsx` |
 
 ---
 
-### Week 2 — Performance + Visible AI in UI (0/5) ⬜
+## SECTION 4 — Production & Deployment ⬜ (0/14 — All New)
 
-| # | Task | Status | Files |
-|---|------|--------|-------|
-| AI-9 | Nightly Aggregation Job | ⬜ TODO | `backend/src/jobs/nightly-aggregation.job.ts` NEW · BullMQ cron at 2 AM · per-provider: success rates by hour/day/zone/distance range, last 24h/7d rates, preferred zones · stores in `ProviderMetricsCache` table · Redis also updated |
-| AI-10 | Cache Service | ⬜ TODO | `backend/src/services/cache.service.ts` NEW · `getOrCompute(key, ttl, fn)` pattern · key prefixes: `provider:{id}:metrics` (5min), `context:weather:{lat},{lng}` (30min), `context:traffic` (5min), `zone:mapping` (1day) |
-| AI-11 | ML Data Collection Worker | ⬜ TODO | `backend/src/workers/ml-data-collection.worker.ts` NEW · triggers after COMPLETED/FAILED · logs: full RideContext, all provider scores at time of booking, selected provider, orchestration strategy, actual outcome, `timeToConfirm`, `timeToComplete` · stored in `MLTrainingData` table |
-| AI-12 | Prisma migration — cache + ML tables | ⬜ TODO | `backend/prisma/schema.prisma` · new: `ProviderMetricsCache` (providerId, metricType, metricKey, metricValue, computedAt, unique constraint) · new: `MLTrainingData` (contextSnapshot Json, providerScores Json, selectedProviderId, orchestrationStrategy, actualOutcome, timeToConfirm) |
-| AI-13 | Frontend — AI-enhanced Results screen | ⬜ TODO | `frontend/src/App.jsx` MODIFY · reliability score progress bar (green >90 / yellow >75 / red <75) · AI reasoning text below each quote card · tags as colored badges (MOST_RELIABLE / CHEAPEST / PREMIUM) · new Socket.IO events: `booking:ai_decision`, `booking:provider_queried`, `booking:failure_risk_update` · live status text: "Analyzing providers…" → "Querying Fast Track…" → "Confirmed!" |
+> Required before any real users. Run after Section 0 security fixes are complete.
 
----
+### Production Setup
 
-### Week 3 — Demand Forecasting + Fair Dynamic Pricing (0/5) ⬜
+| # | Priority | Task | Notes |
+|---|----------|------|-------|
+| D1 | 🔴 | **Railway project setup** — create Postgres + Redis + Node.js service; connect GitHub repo; auto-deploy on push | railway.app — ~₹3,000–5,000/month |
+| D2 | 🔴 | **Frontend deploy to Vercel** — import repo; set `VITE_API_URL` to Railway backend URL; SSL auto-configured | Auto-deploys on every git push to main |
+| D3 | 🔴 | **Domain setup** — buy movzz.in; point DNS to Railway/Vercel; SSL configured automatically | ₹500–1,000/year |
+| D4 | 🔴 | **Production DB migration** — run `npx prisma migrate deploy` on Railway; seed initial data: Chennai zones, transport modes, base fare rates, provider list | Railway console |
+| D5 | 🔴 | **Set all production env vars** — JWT_SECRET (64-char random), Razorpay live keys, Twilio, Resend, Mapbox, Sentry DSNs, Google OAuth callback URL, RAZORPAY_WEBHOOK_SECRET | Railway dashboard env vars |
+| D6 | 🟠 | **Razorpay production activation** — switch test → live keys; complete KYC (2–3 business days); set webhook `https://movzz.in/api/v1/payments/webhook`; test ₹1 live transaction | Razorpay dashboard |
+| D7 | 🟠 | **Seed first admin user** — `UPDATE "User" SET role = 'admin' WHERE phone = '+91...'` via Prisma | Production DB |
 
-| # | Task | Status | Files |
-|---|------|--------|-------|
-| AI-14 | Demand Forecaster Service | ⬜ TODO | `backend/src/services/ai/demand-forecaster.service.ts` NEW · pattern matching (no ML yet) · per zone/hour: avg rides last 4 weeks same day/hour, trend (increasing/decreasing), day-of-week multiplier, event multiplier (manual CSV of Chennai events: concerts, cricket, holidays), weather multiplier (rain +30%) · outputs: predictedRides + confidenceLow/High interval |
-| AI-15 | Prisma migration — demand forecasts | ⬜ TODO | `backend/prisma/schema.prisma` · new: `DemandForecast` (zone, forecastHour DateTime, predictedRides Float, confidenceLow Float, confidenceHigh Float, actualRides Int?, forecastAccuracy Float?, unique on zone+forecastHour) |
-| AI-16 | Proactive driver positioning job | ⬜ TODO | `backend/src/jobs/demand-forecast-update.job.ts` NEW · nightly: generate 24h forecasts, detect supply gaps (predictedRides > available drivers in zone) · trigger: WhatsApp/SMS to drivers in shortage zone ("High demand 6–9 AM Airport. ₹100 bonus per ride") · track effectiveness in DB |
-| AI-17 | Enhanced fare.service.ts — dynamic pricing | ⬜ TODO | `backend/src/services/fare.service.ts` ENHANCE · add demand multiplier (+5–15%, demand > supply) · weather: clear 0% / rain +8% / heavy rain +15% / storm +20% · traffic: low –5% / high +8% / jam +12% · time-of-day: late-night +10% / peak +5% · **hard cap: base fare × 1.2 max (never more than +20%)** · Movzz Pass users always get base fare (no surge) |
-| AI-18 | Pricing breakdown API + frontend | ⬜ TODO | `backend/src/controllers/booking.controller.ts` MODIFY · quotes response adds: `{ fareEstimate, baseFare, breakdown: [{factor, amount}], explanation }` · `frontend/src/App.jsx`: tap quote card → show pricing breakdown modal with "Why this price?" explanation |
+### Testing
 
----
+| # | Priority | Task | Notes |
+|---|----------|------|-------|
+| D8 | 🟠 | **Load testing (k6)** — ramp 10 → 50 → 100 concurrent users; target: 95% requests < 2s, 0% error, CPU < 70% | `backend/tests/load-test.js` NEW |
+| D9 | 🟠 | **End-to-end user testing** — 5–10 testers; flow: signup → OTP → quote → booking → SMS → status update | Manual test plan |
+| D10 | 🟠 | **Mobile responsiveness audit** — iPhone Safari + Android Chrome; min 44×44px touch targets; no horizontal scroll | Chrome DevTools + real devices |
 
-### Week 4 — Provider Analytics + User Personalization (0/5) ⬜
+### Legal & Documentation
 
-| # | Task | Status | Files |
-|---|------|--------|-------|
-| AI-19 | Provider Analytics Service | ⬜ TODO | `backend/src/services/ai/provider-analytics.service.ts` NEW · mine acceptance patterns (which zones/distances/fares accepted most) · behavioral profiles: airport specialist, short-ride vs long-distance, morning person vs night owl, price-sensitive vs volume-focused · outputs: human-readable recommendations ("Send them more airport rides 6–9 AM") |
-| AI-20 | Provider Dashboard Endpoint | ⬜ TODO | `backend/src/controllers/provider-dashboard.controller.ts` NEW · `GET /api/v1/providers/:id/insights` · response: `overallStats`, `yourBestTimes[]`, `yourPreferredZones[]`, `earningsOptimization { recommendation, potential }`, `aiInsights[]` |
-| AI-21 | User Personalization Service | ⬜ TODO | `backend/src/services/ai/personalization.service.ts` NEW · `buildUserProfile(userId)`: favorite providers (repeat 5-star), commute detection (same route weekly), pre-book vs last-minute, price sensitivity · `GET /api/v1/users/me/recommendations`: pre-filled route, suggested provider, Movzz Pass upsell if 12+ rides/month |
-| AI-22 | Prisma migration — personalization tables | ⬜ TODO | `backend/prisma/schema.prisma` · new: `UserPreference` (userId, preferenceType, preferenceKey, preferenceValue, confidence Float, learnedAt, lastUsedAt, unique on userId+type+key) · new: `UserPattern` (userId, patternType, patternData Json, confidence Float, detectedAt, lastOccurrence) |
-| AI-23 | Admin AI Dashboard | ⬜ TODO | `backend/src/controllers/admin.controller.ts` ENHANCE + `frontend/src/Admin.jsx` MODIFY · new endpoints: `GET /admin/ai-performance` (orchestration strategy distribution, prediction accuracy, success rate with vs without AI) · `GET /admin/demand-insights` (forecast vs actual, supply shortage alerts, zone-by-hour heatmap) · `GET /admin/provider-rankings` (top 10 reliable, underperforming list) · Admin panel: new AI Performance tab with charts |
-
----
-
-## SECTION 4 — Summary by Phase
-
-| Phase | Description | Total | Done | Status |
-|-------|-------------|-------|------|--------|
-| 1 | Core Backend | 12 | 12 | ✅ Complete |
-| 2 | Frontend Prototype | 7 | 7 | ✅ Complete |
-| 3 | Production Hardening | 5 | 5 | ✅ Complete |
-| 4 | Background Jobs (BullMQ) | 4 | 4 | ✅ Complete |
-| 5 | Payments (Razorpay) | 4 | 4 | ✅ Complete |
-| 6 | Notifications | 4 | 1 | 🔄 In progress |
-| 7 | Infrastructure | 4 | 3 | 🔄 In progress |
-| 8 | Provider Integrations | 4 | 0 | ⬜ Not started |
-| 9 | Admin Panel | 5 | 5 | ✅ Complete |
-| 10 | Mobile Apps | 6 | 1 | 🔄 In progress |
-| AI Week 1 | Core AI (Reliability + Orchestration + Failure Detection) | 8 | 8 | ✅ Complete |
-| AI Week 2 | Performance + ML Data + AI in UI | 5 | 0 | ⬜ Not started |
-| AI Week 3 | Demand Forecasting + Dynamic Pricing | 5 | 0 | ⬜ Not started |
-| AI Week 4 | Analytics + Personalization | 5 | 0 | ⬜ Not started |
-| **TOTAL** | | **78** | **50** | **64% done** |
+| # | Priority | Task | Notes |
+|---|----------|------|-------|
+| D11 | 🟠 | **Terms of Service** — termly.io template; customize for ride-booking and reliability guarantee | `frontend/src/pages/Terms.jsx` NEW |
+| D12 | 🟠 | **Privacy Policy** — DPDP Act (India) compliance basics | `frontend/src/pages/Privacy.jsx` NEW |
+| D13 | 🟡 | **User FAQ / Help Center** — 4 sections: Getting Started, Pricing, Reliability, Account | `frontend/src/pages/Help.jsx` NEW |
+| D14 | 🟡 | **Env documentation** — fully document all env vars in both `.env.example` files; update README with local setup | `backend/.env.example`, `frontend/.env.example`, `README.md` |
 
 ---
 
-## SECTION 5 — Recommended Priority Order
+## SECTION 5 — Execution Order Summary
 
-| Priority | Task(s) | Effort | Rationale |
-|----------|---------|--------|-----------|
-| **1** | Twilio SMS — real OTP (#43) | 2 hrs | OTP is still `console.log` — no real user can sign up |
-| **2** | Razorpay payments (#39–41) | 1 day | Core revenue flow — nothing monetizes without it |
-| **3** | AI Week 1 — Core AI (#AI-1 to AI-8) | 1 week | Biggest product differentiator; enables orchestration + failure prevention |
-| **4** | AI Week 2 — Performance + UI (#AI-9 to AI-13) | 1 week | Makes AI visible to users; scores and reasoning shown in results screen |
-| **5** | CDN (#46) | 1 hr | Quick win — CloudFront/Cloudflare in front of S3 |
-| **6** | AI Week 3 — Forecasting + Pricing (#AI-14 to AI-18) | 1 week | Revenue optimization + proactive driver supply management |
-| **7** | AI Week 4 — Analytics + Personalization (#AI-19 to AI-23) | 1 week | Provider retention + user engagement |
-| **8** | WhatsApp notifications (#45) | 2 hrs | Ride alerts via WhatsApp (Twilio, same credentials) |
-| **9** | Provider integrations (#47–50) | 2 days | Real dispatch network beyond mock scoring |
-| **10** | React Native (#51–55) | 3–4 weeks | Full mobile product for both users and drivers |
+```
+COMPLETED ✅:
+  S1–S11                       ← Security hardening (all 11 done)
+  #1–#42                       ← Full foundation (all 33 + webhook done)
+  AI-1 through AI-13           ← AI Week 1 + Week 2 (13/23 done)
+  Razorpay webhook             ← Server-to-server payment confirmation
+
+NEXT (before beta):
+  #43                          ← 🟠 Real Twilio OTP (users cannot sign up without it)
+  P0 #47 #48                   ← 🟠 Provider interface + first 2 real providers
+  P1                           ← 🟠 Provider health dashboard
+  D1 D2 D3 D4 D5              ← 🔴 Deploy to production
+  D6 D7 D8 D9 D10             ← 🟠 Activate services + test
+  D11 D12                      ← 🟠 Legal (Terms + Privacy)
+
+POST-LAUNCH:
+  #49 #50                      ← 🟡 Uber/Ola/Rapido + provider onboarding
+  #45 #46                      ← 🟡 WhatsApp + CDN
+  AI-14 AI-15 AI-16 AI-17 AI-18 ← 🟡 AI Week 3 (demand forecasting + dynamic pricing)
+  D13 D14                      ← 🟡 FAQ + env docs
+  AI-19 AI-20 AI-21 AI-22 AI-23 ← 🟢 AI Week 4 (analytics + personalization)
+  #44 #51 #52 #53 #54 #55     ← 🟢 FCM + React Native mobile apps
+```
 
 ---
 
 ## AI Success Metrics (Track Weekly After AI Week 1)
 
-| Metric | Baseline (Now) | Target (Post-AI) |
-|--------|---------------|-----------------|
+| Metric | Baseline | Target (Post-AI) |
+|--------|---------|-----------------|
 | Booking success rate | ~75% | 92%+ |
 | Avg time to confirmation | ~45 seconds | <20 seconds |
 | Rides needing manual ops | ~20% | <5% |
 | AI prediction accuracy | — | >90% (predicted vs actual outcome) |
-| Revenue from dynamic pricing | 0% | +10–15% |
+| Revenue from dynamic pricing | 0% | +10–15% (AI Week 3) |
 | User satisfaction (avg rating) | ~4.2 | 4.7+ |
 
 ---
 
-*MOVZZ Master Roadmap · March 2026 · **50/78 tasks done (64%)***
+*MOVZZ Master Roadmap · March 10, 2026 · **67/108 tasks done (62%)***

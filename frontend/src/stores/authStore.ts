@@ -4,6 +4,7 @@ import apiClient from '../api/client';
 
 interface AuthState {
   token: string | null;
+  tokenExpiry: number | null;
   isAuthenticated: boolean;
   otpSent: boolean;
   phone: string;
@@ -15,15 +16,26 @@ interface AuthState {
   logout: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
-  token: localStorage.getItem('movzz_token') || null,
-  isAuthenticated: !!localStorage.getItem('movzz_token'),
-  otpSent: false,
-  phone: '',
-  isLoading: false,
-  error: null,
+export const useAuthStore = create<AuthState>((set, get) => {
+  const storedExpiry = parseInt(localStorage.getItem('movzz_token_expiry') || '0');
+  const isExpired = storedExpiry > 0 && storedExpiry < Date.now();
+  const storedToken = isExpired ? null : (localStorage.getItem('movzz_token') || null);
 
-  sendOTP: async (phone: string) => {
+  if (isExpired) {
+    localStorage.removeItem('movzz_token');
+    localStorage.removeItem('movzz_token_expiry');
+  }
+
+  return {
+    token: storedToken,
+    tokenExpiry: isExpired ? null : (storedExpiry || null),
+    isAuthenticated: !!storedToken,
+    otpSent: false,
+    phone: '',
+    isLoading: false,
+    error: null,
+
+    sendOTP: async (phone: string) => {
     // ADD THIS LINE: Instantly reject if a request is already in flight
     if (get().isLoading) return false; 
 
@@ -55,12 +67,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         otp 
       });
       
+      console.log('[AuthStore] OTP Response:', response.data);
       if (response.data.success && response.data.data.token) {
         const token = response.data.data.token;
+        console.log('[AuthStore] Token received:', typeof token, token.substring(0, 20));
+        const expiry = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
         localStorage.setItem('movzz_token', token);
-        set({ 
-          token, 
-          isAuthenticated: true, 
+        localStorage.setItem('movzz_token_expiry', String(expiry));
+        set({
+          token,
+          tokenExpiry: expiry,
+          isAuthenticated: true,
           isLoading: false,
           otpSent: false // Reset for future
         });
@@ -73,13 +90,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  loginWithOAuthToken: (token) => {
-    localStorage.setItem('movzz_token', token);
-    set({ token, isAuthenticated: true });
-  },
+    loginWithOAuthToken: (token) => {
+      const expiry = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+      localStorage.setItem('movzz_token', token);
+      localStorage.setItem('movzz_token_expiry', String(expiry));
+      set({ token, tokenExpiry: expiry, isAuthenticated: true });
+    },
 
-  logout: () => {
-    localStorage.removeItem('movzz_token');
-    set({ token: null, isAuthenticated: false, otpSent: false, phone: '' });
-  }
-}));
+    logout: () => {
+      localStorage.removeItem('movzz_token');
+      localStorage.removeItem('movzz_token_expiry');
+      set({ token: null, tokenExpiry: null, isAuthenticated: false, otpSent: false, phone: '' });
+    }
+  };
+});

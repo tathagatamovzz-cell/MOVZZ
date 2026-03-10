@@ -18,6 +18,7 @@ import prisma from '../config/database';
 import { findBestProvider, ScoredProvider, hardFilter, predictReliability } from './provider-scoring.service';
 import redis from '../config/redis';
 import { estimateSingleFare } from './fare.service';
+import { mlDataQueue } from '../config/queues';
 import { getIo } from '../config/socket';
 import { bookingTimeoutQueue, recoveryQueue } from '../config/queues';
 import { sendBookingConfirmation, sendBookingCancellation } from './email.service';
@@ -487,6 +488,11 @@ export async function transitionState(
         `STATE_${newState}`,
         `State changed: ${booking.state} → ${newState}`
     );
+
+    // AI Week 2: queue ML data collection on terminal states
+    if (['COMPLETED', 'FAILED', 'CANCELLED'].includes(newState)) {
+        mlDataQueue.add(`ml-${bookingId}`, { bookingId }).catch(() => {});
+    }
 
     if (newState === 'COMPLETED' && booking.providerId) {
         await updateProviderMetrics(booking.providerId, true);

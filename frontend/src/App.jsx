@@ -684,12 +684,14 @@ function App() {
                 <button className="btn secondary" onClick={() => setScreen("destination")}>Go Back</button>
               </div>
             ) : (
-              // FIX 1 APPLIED: toneClass and tagLabel are now derived per item
-              // using the helper functions defined above the component.
               quotes.map((item) => {
                 const active = selectedRide?.id === item.id;
                 const toneClass = getToneClass(item.tag);
                 const tagLabel = getTagLabel(item.tag);
+                const reliabilityPct = item.reliability ?? 0;
+                const barColor =
+                  reliabilityPct >= 90 ? '#22c55e' :
+                  reliabilityPct >= 75 ? '#f59e0b' : '#ef4444';
 
                 return (
                   <button
@@ -697,22 +699,77 @@ function App() {
                     key={item.id}
                     onClick={() => setSelectedRide(item)}
                   >
-                    {item.tag && <span className="tag">{tagLabel}</span>}
+                    {/* Tag badge */}
+                    {item.tag && (
+                      <span className="tag" style={{
+                        background: item.tag === 'BEST' ? '#dcfce7' : item.tag === 'CHEAPEST' ? '#dbeafe' : '#faf5ff',
+                        color: item.tag === 'BEST' ? '#15803d' : item.tag === 'CHEAPEST' ? '#1d4ed8' : '#7c3aed',
+                        border: `1px solid ${item.tag === 'BEST' ? '#86efac' : item.tag === 'CHEAPEST' ? '#93c5fd' : '#c4b5fd'}`,
+                      }}>
+                        {item.tag === 'BEST' ? '⚡ ' : item.tag === 'CHEAPEST' ? '💰 ' : '👑 '}{tagLabel}
+                      </span>
+                    )}
+
+                    {/* Header row */}
                     <div className="result-head">
-                      <h3>
-                        {item.type || item.line}
-                        {item.provider ? ` via ${item.provider}` : ''}
-                      </h3>
+                      <h3>{item.type || item.line}{item.provider ? ` via ${item.provider}` : ''}</h3>
                       <strong>₹{item.price}</strong>
                     </div>
+
+                    {/* ETA + surge */}
                     <p className="result-meta">
-                      {item.reliability
-                        ? `Reliability ${item.reliability}%`
-                        : `${item.stations} stations`
-                      } • ETA {item.eta} min
+                      ETA {item.eta} min
+                      {item.surge && <span style={{ color: '#f59e0b', marginLeft: 6, fontSize: 11 }}>● Surge</span>}
+                      {item.stations && ` • ${item.stations} stations`}
                     </p>
-                    {item.score && (
-                      <p className="reason">Match Score: {item.score}/100</p>
+
+                    {/* AI reliability bar */}
+                    {item.reliability != null && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-600)', marginBottom: 3 }}>
+                          <span>AI Reliability</span>
+                          <span style={{ fontWeight: 700, color: barColor }}>{reliabilityPct}%</span>
+                        </div>
+                        <div style={{ height: 4, background: '#e5e7eb', borderRadius: 99, overflow: 'hidden' }}>
+                          <div style={{
+                            width: `${reliabilityPct}%`,
+                            height: '100%',
+                            background: barColor,
+                            borderRadius: 99,
+                            transition: 'width 0.4s ease',
+                          }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* AI reasoning */}
+                    {item.why && (
+                      <p style={{
+                        fontSize: 11,
+                        color: 'var(--ink-500)',
+                        marginTop: 6,
+                        lineHeight: 1.4,
+                        fontStyle: 'italic',
+                      }}>
+                        {item.why}
+                      </p>
+                    )}
+
+                    {/* Match score chip */}
+                    {item.score != null && (
+                      <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          background: 'var(--brand)',
+                          color: '#fff',
+                          borderRadius: 99,
+                          padding: '2px 7px',
+                          letterSpacing: '0.04em',
+                        }}>
+                          MOVZZ {item.score}/100
+                        </span>
+                      </div>
                     )}
                   </button>
                 );
@@ -744,12 +801,36 @@ function App() {
 
           {booked && (
             <div className="booking-panel">
-              <p>Status: {currentBooking?.state || 'SEARCHING'}</p>
-              <h4>{selectedRide?.type || selectedRide?.line} is on the way</h4>
-              <span>
-                {currentBooking?.providerId ? 'Driver assigned' : 'Looking for reliable providers...'}
-                {' '}• ETA {selectedRide?.eta} min • Live tracking enabled
+              {/* Status badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{
+                  display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                  background: currentBooking?.state === 'CONFIRMED' || currentBooking?.state === 'IN_PROGRESS' ? '#22c55e'
+                    : currentBooking?.state === 'FAILED' || currentBooking?.state === 'CANCELLED' ? '#ef4444' : '#f59e0b',
+                  animation: (!currentBooking?.state || currentBooking?.state === 'SEARCHING') ? 'pulse 1.5s infinite' : 'none',
+                }} />
+                <strong style={{ fontSize: 13 }}>{currentBooking?.state || 'SEARCHING'}</strong>
+                {currentBooking?.orchestrationStrategy && (
+                  <span style={{ fontSize: 10, background: '#ede9fe', color: '#7c3aed', borderRadius: 99, padding: '2px 7px', fontWeight: 700 }}>
+                    AI:{currentBooking.orchestrationStrategy}
+                  </span>
+                )}
+              </div>
+
+              <h4 style={{ margin: '0 0 4px' }}>{selectedRide?.type || selectedRide?.line} is on the way</h4>
+
+              <span style={{ fontSize: 12, color: 'var(--ink-600)' }}>
+                {currentBooking?.state === 'CONFIRMED' ? '✓ Driver assigned' :
+                 currentBooking?.state === 'IN_PROGRESS' ? '🚗 En route to you' :
+                 'Querying AI for reliable providers...'}
+                {' '}• ETA {selectedRide?.eta} min
               </span>
+
+              {currentBooking?.aiReliabilityScore != null && (
+                <div style={{ marginTop: 8, fontSize: 11, color: 'var(--ink-500)' }}>
+                  AI confidence: <strong style={{ color: '#22c55e' }}>{Math.round(currentBooking.aiReliabilityScore)}/100</strong>
+                </div>
+              )}
             </div>
           )}
         </section>

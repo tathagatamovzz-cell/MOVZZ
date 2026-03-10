@@ -59,6 +59,7 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   lastLoginAt     DateTime?
+  role            String    @default("user")
 
   bookings Booking[]
   credits  UserCredit[]
@@ -144,10 +145,11 @@ model Provider {
   updatedAt       DateTime      @updatedAt
   lastActiveAt    DateTime?
 
-  bookings Booking[]
-  metrics  ProviderMetric[]
-  attempts BookingAttempt[]
-  payouts  Payout[]
+  bookings      Booking[]
+  metrics       ProviderMetric[]
+  attempts      BookingAttempt[]
+  payouts       Payout[]
+  metricsCache  ProviderMetricsCache[]
 
   @@index([type])
   @@index([active])
@@ -255,5 +257,43 @@ model Payout {
 
   @@index([providerId])
   @@index([status])
+  @@index([createdAt])
+}
+
+// AI Week 2 — cached aggregated provider metrics (avoids recomputing on every request)
+model ProviderMetricsCache {
+  id         String   @id @default(cuid())
+  providerId String
+  cacheKey   String   @unique   // e.g. "provider:metrics:<id>"
+  data       Json
+  computedAt DateTime @default(now())
+  expiresAt  DateTime
+
+  provider Provider @relation(fields: [providerId], references: [id])
+
+  @@index([providerId])
+  @@index([expiresAt])
+}
+
+// AI Week 2 — training data collected after every COMPLETED / FAILED booking
+model MLTrainingData {
+  id                   String   @id @default(cuid())
+  bookingId            String   @unique
+  providerId           String
+  transportMode        String
+  distanceKm           Float?
+  hourOfDay            Int
+  dayOfWeek            Int
+  surgeMultiplier      Float?
+  predictedScore       Float?
+  actualOutcome        String   // COMPLETED | FAILED | CANCELLED
+  timeToConfirmSec     Int?
+  orchestrationStrategy String?
+  contextSnapshot      Json?
+  createdAt            DateTime @default(now())
+
+  @@index([providerId])
+  @@index([actualOutcome])
+  @@index([transportMode])
   @@index([createdAt])
 }

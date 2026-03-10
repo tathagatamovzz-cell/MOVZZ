@@ -69,19 +69,17 @@ export async function verifyOTP(req: Request, res: Response): Promise<void> {
 
     // Persist user with either email or phone
     const isEmail = input.includes('@');
-    let user = await prisma.user.findFirst({
-      where: isEmail ? { name: input } : { phone: key }
+    const phoneKey = isEmail ? `email_${key}` : key;
+    const user = await prisma.user.upsert({
+      where: { phone: phoneKey },
+      update: {},
+      create: {
+        phone: phoneKey,
+        name: isEmail ? input : null,
+        email: isEmail ? key : null,
+        referralCode: generateReferralCode()
+      }
     });
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          phone: isEmail ? `email_${Date.now()}` : key,
-          name: isEmail ? input : null,
-          referralCode: generateReferralCode()
-        }
-      });
-    }
 
     const token = generateToken({ userId: user.id, phone: user.phone });
     res.json({ success: true, data: { token, user } });

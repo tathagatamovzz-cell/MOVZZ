@@ -80,10 +80,12 @@ interface FareConfig {
     baseFare: number;
 }
 
+const ROAD_FACTOR = 1.35; // Same as fare.service.ts — accounts for actual road distance
+
 const FARE_CONFIGS: Record<string, FareConfig> = {
-    cab: { perKmRate: 14, baseFare: 80 },
-    bike: { perKmRate: 6, baseFare: 25 },
-    auto: { perKmRate: 9, baseFare: 30 },
+    cab: { perKmRate: 12, baseFare: 80 },   // Economy tier base (matches fare.service.ts)
+    bike: { perKmRate: 7, baseFare: 30 },
+    auto: { perKmRate: 10, baseFare: 40 },
 };
 
 // ─── Haversine ──────────────────────────────────────────

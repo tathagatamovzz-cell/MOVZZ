@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticateUser } from '../middleware/auth.middleware';
+import { requireAdmin } from '../middleware/admin.middleware';
 import {
     getDashboard,
     manualConfirmBooking,
@@ -16,9 +17,8 @@ import {
 
 const router = Router();
 
-// All admin routes require authentication
-// TODO: Add admin role check middleware
-router.use(authenticateUser);
+// All admin routes require authentication + admin role
+router.use(authenticateUser, requireAdmin);
 
 // ─── Dashboard ──────────────────────────────────────────
 router.get('/dashboard', getDashboard);

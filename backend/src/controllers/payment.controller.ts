@@ -11,6 +11,11 @@
  *    → Validates callback params after user returns from Razorpay
  *    → HMAC-SHA256 signature check on payment link params
  *    → Marks booking as paid, schedules provider payout (T+2)
+ *
+ *  POST /api/v1/payments/webhook  (no auth — Razorpay server-to-server)
+ *    → Receives Razorpay webhook events
+ *    → Verifies X-Razorpay-Signature header
+ *    → Handles payment_link.paid → marks booking paid
  * ═══════════════════════════════════════════════════════════
  */
 
@@ -20,6 +25,8 @@ import {
     createPaymentLink,
     verifyPaymentLink,
     scheduleProviderPayout,
+    verifyWebhookSignature,
+    handleWebhookEvent,
 } from '../services/payment.service';
 
 // ─── POST /api/v1/payments/create-link ──────────────────
@@ -166,5 +173,48 @@ export async function verifyPaymentHandler(req: Request, res: Response): Promise
         }
 
         res.status(500).json({ success: false, error: 'Payment verification error' });
+    }
+}
+
+// ─── POST /api/v1/payments/webhook ──────────────────────
+
+/**
+ * webhookHandler — Receives Razorpay server-to-server webhook events.
+ *
+ * No JWT auth — Razorpay doesn't send tokens. Security is via
+ * X-Razorpay-Signature HMAC verification using RAZORPAY_WEBHOOK_SECRET.
+ *
+ * IMPORTANT: This route must receive the RAW request body (Buffer).
+ * Register it BEFORE express.json() in index.ts, or use express.raw().
+ */
+export async function webhookHandler(req: Request, res: Response): Promise<void> {
+    try {
+        const signature = req.headers['x-razorpay-signature'] as string;
+
+        if (!signature) {
+            res.status(400).json({ success: false, error: 'Missing webhook signature' });
+            return;
+        }
+
+        // req.body is a raw Buffer here (see payment.routes.ts)
+        const rawBody = req.body as Buffer;
+
+        const isValid = verifyWebhookSignature(rawBody, signature);
+        if (!isValid) {
+            console.warn('[Webhook] Invalid signature — request rejected');
+            res.status(400).json({ success: false, error: 'Invalid webhook signature' });
+            return;
+        }
+
+        const payload = JSON.parse(rawBody.toString('utf8'));
+        await handleWebhookEvent(payload);
+
+        // Always return 200 quickly — Razorpay retries on non-2xx
+        res.status(200).json({ success: true });
+
+    } catch (err: any) {
+        console.error('[Webhook] Error:', err.message);
+        // Still 200 to prevent Razorpay from retrying on our own errors
+        res.status(200).json({ success: false, error: err.message });
     }
 }

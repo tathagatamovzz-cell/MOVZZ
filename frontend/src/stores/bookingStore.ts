@@ -108,15 +108,20 @@ export const useBookingStore = create<BookingState>((set, get) => ({
 
   connectSocket: (token) => {
     const existing = get().socket;
-    if (existing) existing.disconnect();
+    if (existing) {
+      existing.off('booking:state_changed');
+      existing.off('connect_error');
+      existing.disconnect();
+    }
 
-    const socket = io('http://localhost:3000', { auth: { token } });
+    const backendUrl = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1').replace('/api/v1', '');
+    const socket = io(backendUrl, { auth: { token } });
 
-    socket.on('booking:state_changed', (data) => {
+    socket.on('booking:state_changed', (data: any) => {
       set({ currentBooking: data });
     });
 
-    socket.on('connect_error', (err) => {
+    socket.on('connect_error', (err: any) => {
       console.error('[Socket] Connection error:', err.message);
     });
 
@@ -126,6 +131,8 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   disconnectSocket: () => {
     const { socket } = get();
     if (socket) {
+      socket.off('booking:state_changed');
+      socket.off('connect_error');
       socket.disconnect();
       set({ socket: null });
     }

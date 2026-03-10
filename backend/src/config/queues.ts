@@ -6,9 +6,11 @@
  *  ioredis uses. Workers are registered in index.ts.
  *
  *  Queues:
- *   booking-timeout  — auto-cancel bookings stuck in SEARCHING
- *   recovery-retry   — async provider retry with delay
- *   sms-dispatch     — retryable SMS/OTP delivery
+ *   booking-timeout      — auto-cancel bookings stuck in SEARCHING
+ *   recovery-retry       — async provider retry with delay
+ *   sms-dispatch         — retryable SMS/OTP delivery
+ *   nightly-aggregation  — CRON: aggregate provider metrics at midnight
+ *   ml-data-collection   — collect training data after booking outcome
  * ═══════════════════════════════════════════════════════════
  */
 
@@ -45,6 +47,30 @@ export const recoveryQueue = new Queue('recovery-retry', {
     defaultJobOptions: {
         removeOnComplete: true,
         removeOnFail: 100,
+    },
+});
+
+// ─── Nightly Aggregation Queue ───────────────────────────
+// CRON job fires at midnight every day, aggregates per-provider
+// booking outcomes into ProviderMetric rows and warms the cache.
+export const nightlyAggregationQueue = new Queue('nightly-aggregation', {
+    connection,
+    defaultJobOptions: {
+        removeOnComplete: 10,
+        removeOnFail: 50,
+    },
+});
+
+// ─── ML Data Collection Queue ────────────────────────────
+// Triggered after every COMPLETED / FAILED / CANCELLED booking.
+// Writes a MLTrainingData row for future model training.
+export const mlDataQueue = new Queue('ml-data-collection', {
+    connection,
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+        removeOnComplete: true,
+        removeOnFail: 200,
     },
 });
 

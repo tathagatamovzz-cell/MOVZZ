@@ -71,24 +71,16 @@ export async function googleCallback(req: Request, res: Response): Promise<void>
         const phoneKey = `oauth_google_${googleId}`;
 
         // ── 3. Upsert user ────────────────────────────────────
-        let user = await prisma.user.findFirst({ where: { phone: phoneKey } });
-
-        if (!user) {
-            user = await prisma.user.create({
-                data: {
-                    phone: phoneKey,
-                    name: profile.name || null,
-                    email: profile.email || null,
-                    referralCode: generateReferralCode(),
-                },
-            });
-        } else if (profile.email && !user.email) {
-            // Backfill email if user logged in before this was added
-            user = await prisma.user.update({
-                where: { id: user.id },
-                data: { email: profile.email },
-            });
-        }
+        const user = await prisma.user.upsert({
+            where: { phone: phoneKey },
+            update: profile.email ? { email: profile.email } : {},
+            create: {
+                phone: phoneKey,
+                name: profile.name || null,
+                email: profile.email || null,
+                referralCode: generateReferralCode(),
+            },
+        });
 
         // ── 4. Generate JWT (same shape as OTP flow) ──────────
         const token = generateToken({ userId: user.id, phone: user.phone });

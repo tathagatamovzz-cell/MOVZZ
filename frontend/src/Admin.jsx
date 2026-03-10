@@ -3,7 +3,8 @@ import Map, { Marker, Popup } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { io as ioClient } from 'socket.io-client';
 
-const API = 'http://localhost:3000/api/v1/admin';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
+const API = `${API_BASE}/admin`;
 
 function authHeaders() {
   const token = localStorage.getItem('movzz_token');

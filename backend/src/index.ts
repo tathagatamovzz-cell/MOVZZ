@@ -43,16 +43,23 @@ const PORT = process.env.PORT || 3000;
 // Helmet - Security headers
 app.use(helmet());
 
-// CORS - Cross-origin requests
+// CORS - Cross-origin requests (allowlist, no wildcard)
+const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+    : ['http://localhost:5173'];
+
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) callback(null, true);
+        else callback(new Error(`CORS: origin ${origin} not allowed`));
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Rate limiting - 100 requests per minute
+// Rate limiting - 100 requests per 15 minutes
 const limiter = rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 minute
+    windowMs: 15 * 60 * 1000, // 15 minutes (was 1 minute)
     max: 100,
     message: {
         success: false,
@@ -137,11 +144,9 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 // ─── Socket.IO ──────────────────────────────────────────
 
-const corsOrigin = process.env.CORS_ORIGIN || '*';
-
 const io = new Server(httpServer, {
     cors: {
-        origin: corsOrigin,
+        origin: allowedOrigins,
         methods: ['GET', 'POST'],
     },
 });
@@ -177,6 +182,17 @@ setIo(io);
 import './workers/booking-timeout.worker';
 import './workers/recovery.worker';
 import './workers/sms.worker';
+import './workers/nightly-aggregation.worker';
+import './workers/ml-data.worker';
+
+// ─── CRON: Nightly Aggregation ───────────────────────────
+// Schedule midnight job. BullMQ CRON uses standard cron syntax.
+import { nightlyAggregationQueue } from './config/queues';
+nightlyAggregationQueue.add(
+    'nightly-run',
+    {},
+    { repeat: { pattern: '0 0 * * *' }, jobId: 'nightly-aggregation-cron' }
+).catch(() => {}); // silently ignore if already scheduled
 
 // ─── Start Server ───────────────────────────────────────
 

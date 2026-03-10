@@ -179,6 +179,81 @@ export async function verifyPaymentLink(params: {
     return { success: true, bookingId };
 }
 
+// ─── Webhook Verification ────────────────────────────────
+
+/**
+ * verifyWebhookSignature — Validates the X-Razorpay-Signature header.
+ *
+ * Razorpay signs the raw request body with:
+ *   HMAC_SHA256(rawBody, RAZORPAY_WEBHOOK_SECRET)
+ *
+ * NOTE: Must use raw Buffer body — do NOT parse as JSON before this check.
+ */
+export function verifyWebhookSignature(rawBody: Buffer, signature: string): boolean {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!secret) throw new Error('[Payment] RAZORPAY_WEBHOOK_SECRET not set');
+
+    const expected = crypto
+        .createHmac('sha256', secret)
+        .update(rawBody)
+        .digest('hex');
+
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+}
+
+/**
+ * handleWebhookEvent — Processes verified Razorpay webhook events.
+ *
+ * Supported events:
+ *   payment_link.paid — payment link fully paid → mark booking paid
+ */
+export async function handleWebhookEvent(payload: any): Promise<void> {
+    const event = payload?.event as string;
+
+    if (event === 'payment_link.paid') {
+        const entity = payload?.payload?.payment_link?.entity;
+        const paymentEntity = payload?.payload?.payment?.entity;
+
+        const bookingId = entity?.reference_id || entity?.notes?.bookingId;
+        const razorpayPaymentId = paymentEntity?.id;
+        const paymentLinkStatus = entity?.status;
+
+        if (!bookingId) {
+            console.warn('[Webhook] payment_link.paid — no bookingId in reference_id or notes');
+            return;
+        }
+
+        const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+        if (!booking) {
+            console.warn(`[Webhook] Booking ${bookingId} not found`);
+            return;
+        }
+
+        // Idempotent — skip if already paid
+        if (booking.paidAt) {
+            console.log(`[Webhook] Booking ${bookingId} already paid — skipping`);
+            return;
+        }
+
+        await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                razorpayPaymentId: razorpayPaymentId ?? null,
+                paidAt: new Date(),
+            },
+        });
+
+        // Schedule provider payout (T+2)
+        await scheduleProviderPayout(bookingId);
+
+        console.log(`[Webhook] payment_link.paid → booking ${bookingId} marked paid`);
+        return;
+    }
+
+    // Log unhandled events for visibility — don't error
+    console.log(`[Webhook] Unhandled event: ${event}`);
+}
+
 // ─── Schedule Provider Payout (T+2) ─────────────────────
 
 /**

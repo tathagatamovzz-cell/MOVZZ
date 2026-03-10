@@ -15,8 +15,10 @@ declare global {
 export function authenticateUser(req: Request, res: Response, next: NextFunction): void {
   try {
     const authHeader = req.headers.authorization;
+    console.log('[Auth] Header:', authHeader ? 'Present' : 'Missing');
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('[Auth] No Bearer token');
       res.status(401).json({
         success: false,
         error: 'Authorization token required'
@@ -25,8 +27,10 @@ export function authenticateUser(req: Request, res: Response, next: NextFunction
     }
 
     const token = authHeader.substring(7);
+    console.log('[Auth] Token length:', token.length, 'Starts with:', token.substring(0, 20));
 
     const payload = verifyToken(token);
+    console.log('[Auth] Token valid. userId:', payload.userId);
 
     req.user = {
       userId: payload.userId,
@@ -35,7 +39,8 @@ export function authenticateUser(req: Request, res: Response, next: NextFunction
 
     next();
 
-  } catch (error) {
+  } catch (error: any) {
+    console.log('[Auth] Error:', error.message);
     res.status(401).json({
       success: false,
       error: 'Invalid or expired token'
